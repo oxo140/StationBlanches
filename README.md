@@ -13,8 +13,8 @@ Scripts prêts à l'emploi 🚀.
 
 Les stations blanches sont des environnements dédiés, configurés pour :
 
-    🚫 Éviter les fuites de données sensibles
-    🔒 Protéger l'accès
-    🛡️ Limiter les risques d'attaques
-    ✅ Respecter les normes de sécurité en entreprise ou dans des projets gouvernementaux
+🚫 Éviter les fuites de données sensibles
+🔒 Protéger l'accès
+🛡️ Limiter les risques d'attaques
+✅ Respecter les normes de sécurité en entreprise ou dans des projets gouvernementaux
 
