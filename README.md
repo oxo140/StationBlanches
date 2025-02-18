@@ -6,6 +6,16 @@ Ce projet est conçu pour des Stations blanches.
 Ce projet nécessite l'utilisation d'Ubuntu Live Server 22 pour garantir une installation stable et performante.
 Ce projet est basé sur l'installation de l'outil pandora box disponible ici 
 https://github.com/dbarzin/pandora-box/blob/main/INSTALL.md
+```
+sudo apt install -y git
+git clone https://github.com/dbarzin/pandora-box
+cd pandora-box
+sudo ./install.sh
+```
+```
+cp pandora-box.ini.ubuntu pandora-box.ini
+```
+
 Cependant, certains problèmes ont été rencontrés. Dans ce cas, veuillez exécuter les commandes de patch suivantes :
 ```
 curl -O https://github.com/oxo140/StationBlanches/blob/main/setup_pandora.sh
