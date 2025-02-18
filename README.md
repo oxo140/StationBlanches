@@ -17,7 +17,7 @@ sudo ./install.sh
 cp pandora-box.ini.ubuntu pandora-box.ini
 ```
 
-Cependant, certains problèmes ont été rencontrés. Dans ce cas, veuillez exécuter les commandes de patch suivantes :
+Cependant, si l'outils ne se lance pas au démarrage, dans ce cas, veuillez exécuter les commandes suivantes :
 ```
 curl -O https://github.com/oxo140/StationBlanches/blob/main/setup_pandora.sh
 chmod +x setup_pandora.sh
