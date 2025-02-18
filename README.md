@@ -2,19 +2,21 @@
 
 Bienvenue dans le dépôt du projet Stations Blanches.
 
-Ce projet est conçu pour décrire, configurer et utiliser les environnements sécurisés dédiés à la gestion de Station blanche.
+Ce projet est conçu pour des Stations blanches.
+Ce projet nécessite l'utilisation d'Ubuntu Live Server 22 pour garantir une installation stable et performante.
+Ce projet est basé sur l'installation de l'outil pandora box disponible ici 
+https://github.com/dbarzin/pandora-box/blob/main/INSTALL.md
+Cependant, certains problèmes ont été rencontrés. Dans ce cas, veuillez exécuter les commandes de patch suivantes :
+```
+curl -O https://github.com/oxo140/StationBlanches/blob/main/setup_pandora.sh
+chmod +x setup_pandora.sh
+sudo ./setup_pandora.sh
+```
+Pour tester la station :
 
-🧰 Fonctionnalités
-
-Gestion des connexions SSH 🔒.
-Journalisation des activités 📝.
-Configuration simple et rapide des stations blanches ⚙️.
-Scripts prêts à l'emploi 🚀.
-
-Les stations blanches sont des environnements dédiés, configurés pour :
-
-🚫 Éviter les fuites de données sensibles
-🔒 Protéger l'accès
-🛡️ Limiter les risques d'attaques
-✅ Respecter les normes de sécurité en entreprise ou dans des projets gouvernementaux
-
+Branchez une clé USB contenant un fichier texte qui intègre la chaîne de caractères suivante ou télécharger le sur dépot :
+```
+X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
+```
+Cette chaîne est le fichier de test EICAR, reconnu par les antivirus pour vérifier leur fonctionnement.
+Assurez-vous que la chaîne soit inscrite exactement comme indiqué, sans espaces ni retours à la ligne supplémentaires.
