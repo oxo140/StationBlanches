@@ -23,4 +23,6 @@ fi
 echo "Application des changements en sourçant $BASHRC..."
 source "$BASHRC"
 
-echo "Script terminé."
+echo "Le script est terminé. Appuyez sur une touche pour redémarrer la machine..."
+read -n 1 -s
+sudo reboot
