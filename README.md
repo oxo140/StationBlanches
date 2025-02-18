@@ -1,6 +1,4 @@
-🛡️ Stations Blanches - Sécurité et Supervision
-
-Dépôt du projet Stations Blanches.
+🛡️ Stations Blanches
 
 Ce projet est conçu pour des Stations blanches.
 Ce projet nécessite l'utilisation d'Ubuntu Live Server 22 pour garantir une installation stable et performante.
