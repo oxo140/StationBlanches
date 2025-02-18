@@ -22,7 +22,7 @@ sudo ./setup_pandora.sh
 ```
 Pour tester la station :
 
-Branchez une clé USB contenant un fichier texte qui intègre la chaîne de caractères suivante ou télécharger le sur dépot :
+Branchez une clé USB contenant un fichier texte qui intègre la chaîne de caractères suivante :
 ```
 X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
 ```
