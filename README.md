@@ -1,11 +1,12 @@
 🛡️ Stations Blanches - Sécurité et Supervision
 
-Bienvenue dans le dépôt du projet Stations Blanches.
+Dépôt du projet Stations Blanches.
 
 Ce projet est conçu pour des Stations blanches.
 Ce projet nécessite l'utilisation d'Ubuntu Live Server 22 pour garantir une installation stable et performante.
 Ce projet est basé sur l'installation de l'outil pandora box disponible ici 
 https://github.com/dbarzin/pandora-box/blob/main/INSTALL.md
+Les commandes ci-dessous permet sont installations.
 ```
 sudo apt install -y git
 git clone https://github.com/dbarzin/pandora-box
