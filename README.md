@@ -13,12 +13,9 @@ git clone https://github.com/dbarzin/pandora-box
 cd pandora-box
 sudo ./install.sh
 ```
-```
-cp pandora-box.ini.ubuntu pandora-box.ini
-```
-
 Cependant, si l'outils ne se lance pas au démarrage, dans ce cas, veuillez exécuter les commandes suivantes :
 ```
+cp /home/pandora/pandora-box/pandora-box.ini.ubuntu pandora-box.ini
 curl -O https://github.com/oxo140/StationBlanches/blob/main/setup_pandora.sh
 chmod +x setup_pandora.sh
 sudo ./setup_pandora.sh
