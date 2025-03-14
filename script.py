@@ -10,6 +10,7 @@ IMAGE_NO_USB = "/SB-Blanc/no_usb.png"
 IMAGE_SCANNING = "/SB-Blanc/scanning.png"
 IMAGE_INFECTED = "/SB-Blanc/infected.png"
 IMAGE_CLEAN = "/SB-Blanc/clean.png"
+IMAGE_LOST = "/SB-Blanc/perte.png"  # Image à afficher si la clé est arrachée pendant l'analyse
 
 # Dossier de quarantaine (en cas d'infection)
 QUARANTINE_DIR = "/quarantaine/"
@@ -42,11 +43,24 @@ def update_image(image_path):
 def scan_usb(usb_path):
     print(f"[DEBUG] Démarrage de l'analyse antivirus sur : {usb_path}")
     update_image(IMAGE_SCANNING)
+    
+    # Vérifier si la clé USB est toujours présente avant de commencer le scan
+    if not os.path.exists(usb_path):
+        update_image(IMAGE_LOST)
+        print("[DEBUG] Clé USB retirée avant le début du scan.")
+        return
+    
     result = subprocess.run(
         ["clamscan", "-r", usb_path, "--move=" + QUARANTINE_DIR],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
+
+    # Vérification si la clé USB a été retirée pendant l'analyse
+    if not os.path.exists(usb_path):
+        update_image(IMAGE_LOST)
+        print("[DEBUG] Clé USB retirée pendant l'analyse.")
+        return
 
     print("[DEBUG] Résultat de l'analyse :")
     print(result.stdout.decode())  # Affiche le résultat du scan dans le terminal pour le debug
@@ -92,6 +106,9 @@ root.bind("<Escape>", exit_fullscreen)
 # Zone d'affichage de l'image
 label = tk.Label(root)
 label.pack()
+
+# Afficher "no_usb" au lancement
+update_image(IMAGE_NO_USB)
 
 # Démarrage de la boucle principale dans un thread séparé
 def start_thread():
