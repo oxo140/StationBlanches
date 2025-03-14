@@ -4,7 +4,7 @@
 sudo apt update && sudo apt upgrade -y
 
 # Installer les dépendances nécessaires
-sudo apt install -y python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget
+sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget
 
 # Activer et démarrer le service clamav-freshclam
 sudo systemctl enable clamav-freshclam
