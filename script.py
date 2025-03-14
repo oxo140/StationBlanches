@@ -1,9 +1,9 @@
 import os
 import time
 import subprocess
-import json
 import tkinter as tk
 from PIL import Image, ImageTk
+import threading
 
 # Chemins vers les images d'état
 IMAGE_NO_USB = "/SB-Blanc/no_usb.png"
@@ -60,7 +60,7 @@ def scan_usb(usb_path):
 
     time.sleep(15)  # Attente de 15 secondes avant de revenir à l'état initial
 
-# Fonction principale de boucle
+# Fonction principale de boucle (exécutée dans un thread séparé)
 def main_loop():
     global previous_usb_path
     while True:
@@ -93,6 +93,13 @@ root.bind("<Escape>", exit_fullscreen)
 label = tk.Label(root)
 label.pack()
 
-# Démarrage de la boucle principale
-root.after(100, main_loop)  # Lancement en asynchrone via Tkinter
+# Démarrage de la boucle principale dans un thread séparé
+def start_thread():
+    thread = threading.Thread(target=main_loop, daemon=True)
+    thread.start()
+
+# Lancer le thread après l'initialisation de l'interface
+root.after(100, start_thread)
+
+# Démarrer Tkinter
 root.mainloop()
