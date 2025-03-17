@@ -1,4 +1,6 @@
 #!/bin/bash
+export DISPLAY=:0
+
 # Vérifier toutes les 5 secondes si le script Python est en cours d'exécution
 SCRIPT_PATH="/home/$USER/script.py"
 while true; do
