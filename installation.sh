@@ -62,6 +62,21 @@ echo "[INFO] Configuration de la mise à jour automatique de ClamAV tous les jou
 echo "[INFO] Configuration de l'arrêt automatique de l'ordinateur à 22h00..."
 (crontab -l ; echo "00 22 * * * sudo shutdown -h now") | crontab -
 
+# Ajout de la ligne DISPLAY=:0 dans ~/.bashrc si elle n'existe pas
+echo "[INFO] Vérification et ajout de la ligne 'export DISPLAY=:0' dans ~/.bashrc..."
+if ! grep -q "export DISPLAY=:0" ~/.bashrc; then
+  echo "export DISPLAY=:0" >> ~/.bashrc
+  echo "La ligne 'export DISPLAY=:0' a été ajoutée à ~/.bashrc."
+else
+  echo "La ligne 'export DISPLAY=:0' est déjà présente dans ~/.bashrc."
+fi
+
+# Appliquer immédiatement les changements de ~/.bashrc
+source ~/.bashrc
+
+# Demander à l'utilisateur l'utilisateur pour le service systemd
+read -p "Entrez le nom d'utilisateur pour le service systemd (non root) : " USERNAME
+
 # Création du service systemd
 echo "[INFO] Création du service systemd pour monitor.sh..."
 
@@ -73,7 +88,7 @@ After=network.target
 [Service]
 ExecStart=$(pwd)/script_monitor.sh
 Restart=always
-User=$USER
+User=$USERNAME
 WorkingDirectory=$(pwd)
 
 [Install]
