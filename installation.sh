@@ -50,9 +50,12 @@ echo "[INFO] Téléchargement du script Python..."
 curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script.py
 
 # Mise à jour automatique de ClamAV à 13h30 tous les jours
-echo "[INFO] Configuration de la mise à jour automatique de ClamAV tous les jours à 13h30..."
+echo "[INFO] Configuration de la mise à jour automatique de ClamAV tous les jours à 21h00..."
 # Ajouter une entrée crontab pour la mise à jour de ClamAV
-(crontab -l ; echo "30 13 * * * sudo freshclam") | crontab -
+(crontab -l ; echo "00 21 * * * sudo freshclam") | crontab -
+
+echo "[INFO] Configuration de l'arrêt automatique de l'ordinateur à 22h00..." 
+(crontab -l ; echo "22 00 * * * root shutdown -h now") | crontab -
 
 
 # Création du programme de surveillance pour garantir que le script Python reste en cours d'exécution
