@@ -48,6 +48,8 @@ def scan_usb(usb_path):
     if not os.path.exists(usb_path):
         update_image(IMAGE_LOST)
         print("[DEBUG] Clé USB retirée avant le début du scan.")
+        time.sleep(5)  # Attendre 5 secondes avant de revenir à l'état précédent
+        update_image(IMAGE_NO_USB)  # Revenir à l'image "no_usb"
         return
     
     result = subprocess.run(
@@ -60,6 +62,8 @@ def scan_usb(usb_path):
     if not os.path.exists(usb_path):
         update_image(IMAGE_LOST)
         print("[DEBUG] Clé USB retirée pendant l'analyse.")
+        time.sleep(10)  # Attendre 5 secondes avant de revenir à l'état précédent
+        update_image(IMAGE_NO_USB)  # Revenir à l'image "no_usb"
         return
 
     print("[DEBUG] Résultat de l'analyse :")
