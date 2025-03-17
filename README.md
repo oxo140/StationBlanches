@@ -5,6 +5,7 @@ Ce projet est testé sur Debian 11.8.
 
 ---Installation---
 ```
+sudo apt install curl -y
 curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/installation.sh
 chmod +x installation.sh
 sudo ./installation.sh
