@@ -71,10 +71,13 @@ Description=Surveillance de l'exécution du script Python
 After=network.target
 
 [Service]
-ExecStart=/home/%u/script_monitor.sh
+ExecStart=/home/$USER/script_monitor.sh
 Restart=always
-User=%u
-WorkingDirectory=/home/%u
+User=$USER
+WorkingDirectory=/home/$USER
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/$USER/.Xauthority
+StandardOutput=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -91,5 +94,3 @@ echo "[INFO] Le service systemd est maintenant actif. Le script Python sera surv
 # Attente clavier pour redémarrage
 echo "[INFO] Installation terminée avec succès."
 echo "[INFO] Pensez à désactiver la mise en veille de l'ordinateur et à activer l'ouverture automatique de session."
-read -p "Appuyez sur Entrée pour redémarrer..."
-sudo reboot
