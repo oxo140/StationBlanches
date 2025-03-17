@@ -75,7 +75,20 @@ fi
 source ~/.bashrc
 
 # Demander à l'utilisateur l'utilisateur pour le service systemd
-read -p "Entrez le nom d'utilisateur pour le service systemd (non root) : " USERNAME
+echo "[INFO] Pensez à désactiver la mise en veille de l'ordinateur et à activer l'ouverture automatique de session."
+
+# Récupérer le nom d'utilisateur actif
+ACTIVE_USER=$(who | awk '{print $1}' | head -n 1)
+
+# Demander confirmation ou modification du nom d'utilisateur
+echo "Nom d'utilisateur détecté : $ACTIVE_USER"
+read -p "Entrez le nom d'utilisateur pour le service systemd ($ACTIVE_USER) : " USERNAME
+
+# Utiliser le nom détecté par défaut si l'utilisateur n'entre rien
+USERNAME=${USERNAME:-$ACTIVE_USER}
+
+echo "Nom d'utilisateur sélectionné : $USERNAME"
+
 
 # Création du service systemd
 echo "[INFO] Création du service systemd pour monitor.sh..."
