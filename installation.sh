@@ -52,7 +52,7 @@ curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script.py
 # Télécharger le script de surveillance depuis GitHub
 echo "[INFO] Téléchargement du script de surveillance..."
 curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script_monitor.sh
-chmod +x /home/$USER/script_monitor.sh
+chmod +x ./script_monitor.sh
 
 # Mise à jour automatique de ClamAV à 21h00 tous les jours
 echo "[INFO] Configuration de la mise à jour automatique de ClamAV tous les jours à 21h00..."
@@ -71,13 +71,10 @@ Description=Surveillance de l'exécution du script Python
 After=network.target
 
 [Service]
-ExecStart=/home/$USER/script_monitor.sh
+ExecStart=$(pwd)/script_monitor.sh
 Restart=always
 User=$USER
-WorkingDirectory=/home/$USER
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/$USER/.Xauthority
-StandardOutput=journal
+WorkingDirectory=$(pwd)
 
 [Install]
 WantedBy=multi-user.target
