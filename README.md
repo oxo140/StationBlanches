@@ -69,9 +69,4 @@ Le projet utilise des visuels pour indiquer l'état du scan USB. Ces images sont
 - **Activez l'ouverture automatique de session** afin que les services se lancent correctement au démarrage.
 - ⚠️ **Il est préférable de configurer le démarrage automatique de votre machine via le BIOS pour garantir son allumage sans intervention manuelle.**
 
----
-
-## 📄 Licence
-
-Ce projet est sous licence **MIT**. Consultez le fichier `LICENSE` pour plus de détails.
 
