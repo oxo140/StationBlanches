@@ -72,7 +72,7 @@ def scan_usb(usb_path):
         print("[DEBUG] Des fichiers infectés ont été détectés !")
         update_image(IMAGE_INFECTED)
 
-    time.sleep(15)  # Attente de 15 secondes avant de revenir à l'état initial
+    time.sleep(2)  # Attente de 2 secondes avant de revenir à l'état initial
 
 # Fonction principale de boucle (exécutée dans un thread séparé)
 def main_loop():
