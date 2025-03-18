@@ -16,11 +16,13 @@ IMAGE_LOST = "/SB-Blanc/perte.png"
 # Dossier de quarantaine (en cas d'infection)
 QUARANTINE_DIR = "/quarantaine/"
 
-# Fichier log
+# Fichiers log
 LOG_FILE = "log.txt"
+STATS_FILE = "stats.txt"
 
 # Variable pour suivre l'état précédent
 previous_usb_path = None
+usb_count = 0
 
 def log_infection(usb_path, scan_result):
     """Crée ou ajoute un log en cas de détection de virus."""
@@ -30,6 +32,16 @@ def log_infection(usb_path, scan_result):
         log_file.write(f"[{timestamp}] Infection détectée sur la clé ID: {usb_id}\n")
         log_file.write(scan_result + "\n")
         log_file.write("-" * 40 + "\n")
+
+def log_usb_connection():
+    """Enregistre chaque clé USB connectée."""
+    global usb_count
+    usb_count += 1
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(STATS_FILE, "w") as stats_file:
+        stats_file.write(f"Nombre total de clés USB connectées : {usb_count}\n")
+    with open(STATS_FILE, "a") as stats_file:
+        stats_file.write(f"[{timestamp}] Clé USB connectée\n")
 
 # Fonction pour vérifier la présence d'une clé USB via /proc/mounts
 def get_usb_path():
@@ -88,6 +100,7 @@ def main_loop():
 
         if usb_path != previous_usb_path:
             if usb_path:
+                log_usb_connection()
                 scan_usb(usb_path)
             else:
                 update_image(IMAGE_NO_USB)
