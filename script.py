@@ -4,81 +4,83 @@ import subprocess
 import tkinter as tk
 from PIL import Image, ImageTk
 import threading
+from datetime import datetime
 
 # Chemins vers les images d'état
 IMAGE_NO_USB = "/SB-Blanc/no_usb.png"
 IMAGE_SCANNING = "/SB-Blanc/scanning.png"
 IMAGE_INFECTED = "/SB-Blanc/infected.png"
 IMAGE_CLEAN = "/SB-Blanc/clean.png"
-IMAGE_LOST = "/SB-Blanc/perte.png"  # Image à afficher si la clé est arrachée pendant l'analyse
+IMAGE_LOST = "/SB-Blanc/perte.png"
 
 # Dossier de quarantaine (en cas d'infection)
 QUARANTINE_DIR = "/quarantaine/"
 
+# Fichier log
+LOG_FILE = "log.txt"
+
 # Variable pour suivre l'état précédent
 previous_usb_path = None
 
+def log_infection(usb_path, scan_result):
+    """Crée ou ajoute un log en cas de détection de virus."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    usb_id = usb_path.split("/")[-1]  # Utilise le nom du point de montage comme ID de clé
+    with open(LOG_FILE, "a") as log_file:
+        log_file.write(f"[{timestamp}] Infection détectée sur la clé ID: {usb_id}\n")
+        log_file.write(scan_result + "\n")
+        log_file.write("-" * 40 + "\n")
+
 # Fonction pour vérifier la présence d'une clé USB via /proc/mounts
 def get_usb_path():
-    print("[DEBUG] Vérification des périphériques USB via /proc/mounts...")
     with open("/proc/mounts", "r") as mounts:
         for line in mounts:
             if "/media/" in line or "/mnt/" in line:
                 usb_path = line.split()[1]  # Récupère le point de montage
-                print(f"[DEBUG] Clé USB détectée : {usb_path}")
                 return usb_path
-    print("[DEBUG] Aucune clé USB détectée.")
     return None
 
 # Fonction de mise à jour de l'image affichée
 def update_image(image_path):
-    print(f"[DEBUG] Affichage de l'image : {image_path}")
     img = Image.open(image_path)
-    img = img.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)  # Plein écran + qualité optimale
+    img = img.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)
     photo = ImageTk.PhotoImage(img)
     label.config(image=photo)
-    label.image = photo  # Mise à jour de l'image affichée
+    label.image = photo
 
 # Fonction de scan de la clé USB
 def scan_usb(usb_path):
-    print(f"[DEBUG] Démarrage de l'analyse antivirus sur : {usb_path}")
+    global previous_usb_path
     update_image(IMAGE_SCANNING)
-    
-    # Vérifier si la clé USB est toujours présente avant de commencer le scan
+
     if not os.path.exists(usb_path):
         update_image(IMAGE_LOST)
-        print("[DEBUG] Clé USB retirée avant le début du scan.")
-        time.sleep(5)  # Attendre 5 secondes avant de revenir à l'état précédent
-        update_image(IMAGE_NO_USB)  # Revenir à l'image "no_usb"
+        time.sleep(5)
+        update_image(IMAGE_NO_USB)
         return
-    
+
     result = subprocess.run(
         ["clamscan", "-r", usb_path, "--move=" + QUARANTINE_DIR],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
 
-    # Vérification si la clé USB a été retirée pendant l'analyse
     if not os.path.exists(usb_path):
         update_image(IMAGE_LOST)
-        print("[DEBUG] Clé USB retirée pendant l'analyse.")
-        time.sleep(10)  # Attendre 5 secondes avant de revenir à l'état précédent
-        update_image(IMAGE_NO_USB)  # Revenir à l'image "no_usb"
+        time.sleep(10)
+        update_image(IMAGE_NO_USB)
         return
 
-    print("[DEBUG] Résultat de l'analyse :")
-    print(result.stdout.decode())  # Affiche le résultat du scan dans le terminal pour le debug
+    scan_result = result.stdout.decode()
 
-    if "Infected files: 0" in result.stdout.decode():
-        print("[DEBUG] Aucun fichier infecté détecté.")
+    if "Infected files: 0" in scan_result:
         update_image(IMAGE_CLEAN)
     else:
-        print("[DEBUG] Des fichiers infectés ont été détectés !")
         update_image(IMAGE_INFECTED)
+        log_infection(usb_path, scan_result)
 
-    time.sleep(2)  # Attente de 2 secondes avant de revenir à l'état initial
+    time.sleep(2)
 
-# Fonction principale de boucle (exécutée dans un thread séparé)
 def main_loop():
     global previous_usb_path
     while True:
@@ -91,36 +93,26 @@ def main_loop():
                 update_image(IMAGE_NO_USB)
 
         previous_usb_path = usb_path
-        time.sleep(2)  # Vérification toutes les 2 secondes
+        time.sleep(2)
 
-# Interface graphique Tkinter
 root = tk.Tk()
 root.title("Station Blanche - Scan USB")
-
-# Activer le mode plein écran
 root.attributes("-fullscreen", True)
 
-# Permettre de quitter avec la touche Échap
 def exit_fullscreen(event=None):
     root.attributes("-fullscreen", False)
     root.destroy()
 
 root.bind("<Escape>", exit_fullscreen)
 
-# Zone d'affichage de l'image
 label = tk.Label(root)
 label.pack()
 
-# Afficher "no_usb" au lancement
 update_image(IMAGE_NO_USB)
 
-# Démarrage de la boucle principale dans un thread séparé
 def start_thread():
     thread = threading.Thread(target=main_loop, daemon=True)
     thread.start()
 
-# Lancer le thread après l'initialisation de l'interface
 root.after(100, start_thread)
-
-# Démarrer Tkinter
 root.mainloop()
