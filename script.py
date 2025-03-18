@@ -17,10 +17,10 @@ IMAGE_LOST = "/SB-Blanc/perte.png"
 QUARANTINE_DIR = "/quarantaine/"
 
 # Fichiers log
-LOG_FILE = "log.txt"
-STATS_FILE = "stats.txt"
+LOG_FILE = "LOG.txt"
+STATS_FILE = "NBCLE.txt"
 
-# Variable pour suivre l'état précédent
+# Variable pour suivre l'état précédent et le comptage des clés USB
 previous_usb_path = None
 usb_count = 0
 
@@ -34,14 +34,29 @@ def log_infection(usb_path, scan_result):
         log_file.write("-" * 40 + "\n")
 
 def log_usb_connection():
-    """Enregistre chaque clé USB connectée."""
+    """Enregistre chaque clé USB connectée avec un timestamp et met à jour le total."""
     global usb_count
-    usb_count += 1
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Lire le fichier NBCLE.txt et obtenir le nombre total de clés USB
+    try:
+        with open(STATS_FILE, "r") as stats_file:
+            lines = stats_file.readlines()
+            # Chercher la ligne contenant le nombre de clés USB
+            first_line = lines[0].strip()
+            usb_count = int(first_line.split(": ")[1])
+    except (FileNotFoundError, IndexError, ValueError):
+        # Si le fichier n'existe pas ou ne peut pas être lu, initialiser à zéro
+        usb_count = 0
+
+    # Incrémenter le nombre de clés USB connectées
+    usb_count += 1
+
+    # Mettre à jour le fichier NBCLE.txt avec le nombre total de clés
     with open(STATS_FILE, "w") as stats_file:
         stats_file.write(f"Nombre total de clés USB connectées : {usb_count}\n")
-    with open(STATS_FILE, "a") as stats_file:
-        stats_file.write(f"[{timestamp}] Clé USB connectée\n")
+        
+    # Ne pas ajouter l'entrée pour la connexion dans le fichier NBCLE.txt
 
 # Fonction pour vérifier la présence d'une clé USB via /proc/mounts
 def get_usb_path():
@@ -100,8 +115,8 @@ def main_loop():
 
         if usb_path != previous_usb_path:
             if usb_path:
-                log_usb_connection()
-                scan_usb(usb_path)
+                log_usb_connection()  # Enregistrer la connexion sans ajouter d'entrée dans NBCLE.txt
+                scan_usb(usb_path)  # Lancer le scan de la clé USB
             else:
                 update_image(IMAGE_NO_USB)
 
