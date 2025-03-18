@@ -69,4 +69,14 @@ Le projet utilise des visuels pour indiquer l'état du scan USB. Ces images sont
 - **Activez l'ouverture automatique de session** afin que les services se lancent correctement au démarrage.
 - ⚠️ **Il est préférable de configurer le démarrage automatique de votre machine via le BIOS pour garantir son allumage sans intervention manuelle.**
 
+📊 Fichiers de Statistiques et Logs
 
+Le projet génère deux fichiers pour suivre les activités et les infections des périphériques USB :
+
+    NBCLE.txt : Ce fichier contient le nombre total de clés USB connectées et enregistre des informations sur chaque clé connectée.
+        Il affiche le nombre total de clés USB connectées à la station blanche.
+        Note : La ligne concernant la connexion de chaque clé USB n'est plus ajoutée pour éviter l'encombrement du fichier.
+
+    LOG.txt : Ce fichier est utilisé pour enregistrer les événements d'infection détectée par l'antivirus ClamAV.
+        Chaque fois qu'une infection est détectée sur une clé USB, une entrée est ajoutée avec un horodatage et la description de l'infection.
+        Note : Chaque détection d'infection est suivie de l'ID de la clé USB et des détails de l'infection.
