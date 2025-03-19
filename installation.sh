@@ -45,16 +45,14 @@ if [ ! -d "/quarantaine" ]; then
     sudo chown clamav:clamav /quarantaine
 fi
 
-# Télécharger le script Python depuis GitHub
-echo "[INFO] Téléchargement du script Python..."
+# Télécharger les scripts principaux depuis GitHub
+echo "[INFO] Téléchargement du script Python principal..."
 curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script.py
 
-# Télécharger le script de surveillance depuis GitHub
 echo "[INFO] Téléchargement du script de surveillance..."
 curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script_monitor.sh
 chmod +x ./script_monitor.sh
 
-# Télécharger le script USB monitor depuis GitHub (usb_monitor.py)
 echo "[INFO] Téléchargement du script USB monitor..."
 curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/usb_monitor.py
 
@@ -138,7 +136,17 @@ sudo systemctl start script_monitor.service
 sudo systemctl enable usb_monitor.service
 sudo systemctl start usb_monitor.service
 
-echo "[INFO] Les services systemd sont maintenant actifs. Les scripts seront surveillés et relancés automatiquement si nécessaire."
+# Confirmation pour l'installation du système d'envoi de mails
+read -p "[INFO] Souhaitez-vous mettre en place l'envoi d'e-mails en cas d'infection détectée ? (oui/non) : " INSTALL_MAIL
+
+if [[ "$INSTALL_MAIL" == "oui" ]]; then
+    echo "[INFO] Téléchargement et exécution de mailinstall.sh..."
+    curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/mailinstall.sh
+    chmod +x ./mailinstall.sh
+    ./mailinstall.sh
+else
+    echo "[INFO] Envoi d'e-mails non configuré."
+fi
 
 # Attente clavier pour redémarrage
 echo "[INFO] Installation terminée avec succès."
