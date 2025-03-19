@@ -13,7 +13,7 @@ sudo apt update && sudo apt upgrade -y
 
 # Installer les dépendances nécessaires
 echo "[INFO] Installation des dépendances..."
-sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget curl
+sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget curl python3-pyudev
 
 # Activer et démarrer le service clamav-freshclam
 echo "[INFO] Activation et démarrage de clamav-freshclam..."
@@ -54,6 +54,10 @@ echo "[INFO] Téléchargement du script de surveillance..."
 curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script_monitor.sh
 chmod +x ./script_monitor.sh
 
+# Télécharger le script USB monitor depuis GitHub (usb_monitor.py)
+echo "[INFO] Téléchargement du script USB monitor..."
+curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/usb_monitor.py
+
 # Mise à jour automatique de ClamAV à 21h00 tous les jours
 echo "[INFO] Configuration de la mise à jour automatique de ClamAV tous les jours à 21h00..."
 (crontab -l ; echo "00 21 * * * sudo freshclam") | crontab -
@@ -89,8 +93,7 @@ USERNAME=${USERNAME:-$ACTIVE_USER}
 
 echo "Nom d'utilisateur sélectionné : $USERNAME"
 
-
-# Création du service systemd
+# Création du service systemd pour script_monitor.sh
 echo "[INFO] Création du service systemd pour monitor.sh..."
 
 cat << EOF | sudo tee /etc/systemd/system/script_monitor.service
@@ -108,13 +111,34 @@ WorkingDirectory=$(pwd)
 WantedBy=multi-user.target
 EOF
 
-# Activer et démarrer le service systemd
-echo "[INFO] Activation et démarrage du service systemd..."
+# Création du service systemd pour usb_monitor.py
+echo "[INFO] Création du service systemd pour usb_monitor.py..."
+
+cat << EOF | sudo tee /etc/systemd/system/usb_monitor.service
+[Unit]
+Description=Surveillance des périphériques USB
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 $(pwd)/usb_monitor.py
+Restart=always
+User=$USERNAME
+WorkingDirectory=$(pwd)
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Activer et démarrer les services systemd
+echo "[INFO] Activation et démarrage des services systemd..."
 sudo systemctl daemon-reload
 sudo systemctl enable script_monitor.service
 sudo systemctl start script_monitor.service
 
-echo "[INFO] Le service systemd est maintenant actif. Le script Python sera surveillé et relancé automatiquement si nécessaire."
+sudo systemctl enable usb_monitor.service
+sudo systemctl start usb_monitor.service
+
+echo "[INFO] Les services systemd sont maintenant actifs. Les scripts seront surveillés et relancés automatiquement si nécessaire."
 
 # Attente clavier pour redémarrage
 echo "[INFO] Installation terminée avec succès."
