@@ -33,6 +33,10 @@ def log_infection(usb_path, scan_result):
         log_file.write(scan_result + "\n")
         log_file.write("-" * 40 + "\n")
 
+    # Lancer le script mail.py en cas d'infection
+    if os.path.exists("mail.py"):
+        subprocess.run(["python3", "mail.py"])
+
 def log_usb_connection():
     """Enregistre chaque clé USB connectée avec un timestamp et met à jour le total."""
     global usb_count
@@ -55,10 +59,7 @@ def log_usb_connection():
     # Mettre à jour le fichier NBCLE.txt avec le nombre total de clés
     with open(STATS_FILE, "w") as stats_file:
         stats_file.write(f"Nombre total de clés USB connectées : {usb_count}\n")
-        
-    # Ne pas ajouter l'entrée pour la connexion dans le fichier NBCLE.txt
 
-# Fonction pour vérifier la présence d'une clé USB via /proc/mounts
 def get_usb_path():
     with open("/proc/mounts", "r") as mounts:
         for line in mounts:
@@ -67,7 +68,6 @@ def get_usb_path():
                 return usb_path
     return None
 
-# Fonction de mise à jour de l'image affichée
 def update_image(image_path):
     img = Image.open(image_path)
     img = img.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)
@@ -75,7 +75,6 @@ def update_image(image_path):
     label.config(image=photo)
     label.image = photo
 
-# Fonction de scan de la clé USB
 def scan_usb(usb_path):
     global previous_usb_path
     update_image(IMAGE_SCANNING)
@@ -115,8 +114,8 @@ def main_loop():
 
         if usb_path != previous_usb_path:
             if usb_path:
-                log_usb_connection()  # Enregistrer la connexion sans ajouter d'entrée dans NBCLE.txt
-                scan_usb(usb_path)  # Lancer le scan de la clé USB
+                log_usb_connection()
+                scan_usb(usb_path)
             else:
                 update_image(IMAGE_NO_USB)
 
