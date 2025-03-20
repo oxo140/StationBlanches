@@ -23,6 +23,7 @@ read app_password
 echo "Modification du script mail.py avec vos informations..."
 sed -i "s/from_email = .*/from_email = \"$from_email\"/" mail.py
 sed -i "s/to_email = .*/to_email = \"$to_email\"/" mail.py
+sed -i "s/server.login(from_email, .*/server.login(from_email, '$app_password')/" mail.py
 
 # Créer ou modifier le fichier .msmtprc
 echo "Configuration de msmtp..."
@@ -45,5 +46,5 @@ chmod 600 ~/.msmtprc
 # Afficher un message pour l'utilisateur
 echo "L'installation et la configuration sont terminées."
 echo "Le script mail.py a été téléchargé et modifié avec vos informations."
-echo "Vous pouvez maintenant utiliser le script Python pour testé l'envoies des emails."
+echo "Vous pouvez maintenant utiliser le script Python pour tester l'envoi des emails."
 echo "python3 mail.py"
