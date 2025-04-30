@@ -6,7 +6,7 @@ Ce projet est conçu pour des Stations Blanches, permettant de scanner les péri
 
 - **Debian 11.8** (ou version supérieure recommandée)
 - **Environnement GNOME** recommandé
-- Connexion Internet pour télécharger les dépendances et les ressources
+- Connexion Internet pour téléchargement et mise a jour de la base antivirus.
 
 
 
