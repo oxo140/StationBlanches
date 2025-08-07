@@ -41,7 +41,7 @@ X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
 ```
 
 Cette chaîne est le fichier de test **EICAR**, reconnu par les antivirus pour tester leur bon fonctionnement. **Veillez à respecter les majuscules, les caractères spéciaux et l'absence d'espaces ou de retours à la ligne superflus.**
-
+Ajouter le script au programe de démarrage debian ou alors avec une tache crontab.
 ---
 
 ## 🖼️ Images
