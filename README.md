@@ -29,8 +29,12 @@ sudo ./installation.sh
 
 Pour vérifier le bon fonctionnement de la station blanche :
 
-1. Créez un fichier texte sur une clé USB.
-2. Insérez-y la chaîne de caractères suivante :
+1. Lancer un terminal et lancé le script avec la commande python
+```bash
+python3 script.py
+```
+2. Créez un fichier texte sur une clé USB.
+3. Insérez-y la chaîne de caractères suivante :
 
 ```
 X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
