@@ -14,10 +14,11 @@ echo "[INFO] Mise à jour du système et installation des dépendances..."
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget curl python3-pyudev xdotool unzip
 
-# 2) Activation de ClamAV
+# 2) Activation de ClamAV (correction freshclam init failed)
+sudo systemctl stop clamav-freshclam
+sudo freshclam
 sudo systemctl enable clamav-freshclam
 sudo systemctl start clamav-freshclam
-sudo freshclam
 
 # 3) Création des répertoires
 [ ! -d "$IMAGES_DIR" ] && sudo mkdir "$IMAGES_DIR"
