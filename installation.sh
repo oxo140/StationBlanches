@@ -13,6 +13,7 @@ IMAGES_DIR="/SB-Blanc"
 echo "[INFO] Mise à jour du système et installation des dépendances..."
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget curl python3-pyudev xdotool unzip
+pip3 install psutil
 
 # 2) Activation de ClamAV (correction freshclam init failed)
 sudo systemctl stop clamav-freshclam
@@ -43,9 +44,9 @@ wget -O "$SCRIPT_DIR/full.zip" https://bazaar.abuse.ch/export/txt/sha256/full/
 unzip -p "$SCRIPT_DIR/full.zip" > "$SCRIPT_DIR/hashdb/mb_full.txt"
 
 # 7) Crontab : mise à jour base hash à 10h et 18h + freshclam à 21h + arrêt à 22h
-(crontab -l ; echo "0 10,18 * * * wget -O $SCRIPT_DIR/full.zip https://bazaar.abuse.ch/export/txt/sha256/full/ && unzip -p $SCRIPT_DIR/full.zip > $SCRIPT_DIR/hashdb/mb_full.txt") | crontab -
-(crontab -l ; echo "0 21 * * * sudo freshclam") | crontab -
-(crontab -l ; echo "0 22 * * * sudo shutdown -h now") | crontab -
+(crontab -l 2>/dev/null; echo "0 10,18 * * * wget -O $SCRIPT_DIR/full.zip https://bazaar.abuse.ch/export/txt/sha256/full/ && unzip -p $SCRIPT_DIR/full.zip > $SCRIPT_DIR/hashdb/mb_full.txt") | crontab -
+(crontab -l 2>/dev/null; echo "0 21 * * * sudo freshclam") | crontab -
+(crontab -l 2>/dev/null; echo "0 22 * * * sudo shutdown -h now") | crontab -
 
 # 8) Script de lancement GUI avec ESC auto
 echo "[INFO] Création du script de lancement GUI avec ESC auto..."
