@@ -77,6 +77,28 @@ if [[ "$CONFIG_EMAIL" =~ ^[oO]$ ]]; then
     echo "[INFO] Configuration email terminée."
 fi
 
+# Configuration de l'autologin
+echo "[INFO] Configuration de l'autologin pour l'utilisateur: $AUTOLOGIN_USER"
+
+# Sauvegarde du fichier lightdm.conf original
+sudo cp /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.backup 2>/dev/null || true
+
+# Décommenter ou ajouter les lignes d'autologin dans la section [Seat:*]
+sudo sed -i '/^\[Seat:\*\]/,/^\[/ {
+    s/^#autologin-user=.*/autologin-user='$AUTOLOGIN_USER'/
+    s/^#autologin-user-timeout=.*/autologin-user-timeout=0/
+}' /etc/lightdm/lightdm.conf
+
+# Si les lignes n'existent pas, les ajouter après [Seat:*]
+if ! sudo grep -q "^autologin-user=" /etc/lightdm/lightdm.conf; then
+    sudo sed -i '/^\[Seat:\*\]/a autologin-user='$AUTOLOGIN_USER'' /etc/lightdm/lightdm.conf
+fi
+if ! sudo grep -q "^autologin-user-timeout=" /etc/lightdm/lightdm.conf; then
+    sudo sed -i '/^autologin-user=/a autologin-user-timeout=0' /etc/lightdm/lightdm.conf
+fi
+
+echo "[INFO] Autologin configuré pour l'utilisateur: $AUTOLOGIN_USER"
+
 # 8) Script de vérification et lancement automatique
 echo "[INFO] Création du script de vérification et auto-start..."
 cat > "$SCRIPT_DIR/check_and_start_script.sh" << 'EOF'
@@ -151,10 +173,22 @@ sudo -u sbblanche XDG_RUNTIME_DIR=/run/user/$(id -u sbblanche) systemctl --user 
 # 11) Permissions et finalisation
 chmod 777 "$SCRIPT_DIR/station_blanche_hash.log" 2>/dev/null || true
 
-echo "[INFO] Installation terminée."
+echo "✅ Installation terminée."
+echo "[INFO] Autologin configuré pour: $AUTOLOGIN_USER"
 echo "[INFO] Le script se lancera automatiquement toutes les minutes via crontab."
 echo "[INFO] PC configuré pour s'éteindre à ${SHUTDOWN_HOUR}h00"
 echo "[INFO] Curseur de souris automatiquement caché"
 echo "[INFO] Pour vérifier le crontab : crontab -l"
 echo "[INFO] Pour voir les processus : pgrep -f 'python3.*script.py gui'"
 echo "[INFO] Logs mise à jour hash : tail -f $SCRIPT_DIR/hashdb_update.log"
+
+# Demande de redémarrage
+read -p "Voulez-vous redémarrer maintenant pour finaliser l'installation ? (o/N) " reponse
+# Normaliser en minuscule
+reponse=$(echo "$reponse" | tr '[:upper:]' '[:lower:]')
+if [[ "$reponse" == "o" || "$reponse" == "oui" ]]; then
+    echo "🔄 Redémarrage en cours..."
+    sudo reboot
+else
+    echo "⏳ Redémarrage annulé. Pensez à redémarrer plus tard pour appliquer les changements."
+fi
