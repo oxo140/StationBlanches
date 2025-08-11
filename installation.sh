@@ -82,5 +82,6 @@ EOF
 
 sudo -u sbblanche XDG_RUNTIME_DIR=/run/user/$(id -u sbblanche) systemctl --user daemon-reload
 sudo -u sbblanche XDG_RUNTIME_DIR=/run/user/$(id -u sbblanche) systemctl --user enable --now station_blanche.service
+chmod 777 station_blanche_hash.log
 
 echo "[INFO] Installation terminée. UI configurée pour se lancer au démarrage en plein écran avec ESC auto."
