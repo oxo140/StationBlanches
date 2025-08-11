@@ -99,6 +99,35 @@ fi
 
 echo "[INFO] Autologin configuré pour l'utilisateur: $AUTOLOGIN_USER"
 
+# Ajout du script au démarrage automatique XFCE
+echo "[INFO] Configuration du démarrage automatique XFCE..."
+sudo -u $AUTOLOGIN_USER mkdir -p /home/$AUTOLOGIN_USER/.config/autostart
+
+sudo -u $AUTOLOGIN_USER bash -c "cat > /home/$AUTOLOGIN_USER/.config/autostart/station_blanche.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=Station Blanche Auto
+Comment=Lancement automatique Station Blanche
+Exec=/home/sbblanche/check_and_start_script.sh
+Icon=applications-development
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+StartupNotify=false
+Terminal=false
+EOF"
+
+# Ajout également dans le profil bash pour double sécurité
+echo "[INFO] Ajout du lancement au profil utilisateur..."
+if ! grep -q "check_and_start_script.sh" /home/$AUTOLOGIN_USER/.bashrc 2>/dev/null; then
+    sudo -u $AUTOLOGIN_USER bash -c "echo '# Auto-start Station Blanche' >> /home/$AUTOLOGIN_USER/.bashrc"
+    sudo -u $AUTOLOGIN_USER bash -c "echo 'if [ \"\$DISPLAY\" ] && [ -z \"\$SSH_CLIENT\" ]; then' >> /home/$AUTOLOGIN_USER/.bashrc"
+    sudo -u $AUTOLOGIN_USER bash -c "echo '    /home/sbblanche/check_and_start_script.sh &' >> /home/$AUTOLOGIN_USER/.bashrc"
+    sudo -u $AUTOLOGIN_USER bash -c "echo 'fi' >> /home/$AUTOLOGIN_USER/.bashrc"
+fi
+
+echo "[INFO] Démarrage automatique configuré via XFCE autostart et .bashrc"
+
 # 8) Script de vérification et lancement automatique
 echo "[INFO] Création du script de vérification et auto-start..."
 cat > "$SCRIPT_DIR/check_and_start_script.sh" << 'EOF'
