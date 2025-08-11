@@ -5,7 +5,7 @@ Ce projet est conçu pour des Stations Blanches, permettant de scanner les péri
 ## 📋 Prérequis
 
 - **Debian 11.8** (ou version supérieure recommandée)
-- **Environnement GNOME** recommandé
+- **Environnement Xfce** obligatoire
 - Connexion Internet pour téléchargement et mise a jour de la base antivirus.
 
 
@@ -29,20 +29,29 @@ sudo ./installation.sh
 
 Pour vérifier le bon fonctionnement de la station blanche :
 
-1. Lancer un terminal et lancé le script avec la commande python
+1. Dans XFCE, vérifier dans Paramètres → Disques et périphériques amovibles que “Monter les médias amovible” est coché.
+2. Lancer un terminal et lancé le script avec la commande python
 ```bash
-python3 script.py
+python3 script.py gui
 ```
-2. Créez un fichier texte sur une clé USB.
-3. Insérez-y la chaîne de caractères suivante :
+3. Créez un fichier texte sur une clé USB.
+4. Insérez-y une clé usb pour tester
 
-```
-X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
-```
 
-Cette chaîne est le fichier de test **EICAR**, reconnu par les antivirus pour tester leur bon fonctionnement. **Veillez à respecter les majuscules, les caractères spéciaux et l'absence d'espaces ou de retours à la ligne superflus.**
-Ajouter le script au programe de démarrage debian ou alors avec une tache crontab.
----
+📄 À propos de mb_full.txt
+
+    C’est un dump complet de hachages SHA-256 de fichiers malveillants connu, fourni par MalwareBazaar.
+
+    Format : un hash SHA-256 par ligne (64 caractères hexadécimaux).
+
+    Utilisé comme liste noire : si un fichier USB a un hash qui correspond → infection.
+
+    Mise à jour :
+
+        Automatique via cron à 10h00 et 18h00
+
+        Téléchargé en ZIP, décompressé, puis stocké dans hashdb/mb_full.txt.
+
 
 ## 🖼️ Images
 
