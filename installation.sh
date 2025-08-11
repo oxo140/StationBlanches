@@ -14,7 +14,7 @@ echo "[INFO] Mise à jour du système et installation des dépendances..."
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget curl python3-pyudev xdotool unzip
 sudo apt install python3-selenium
-pip3 install psutil
+sudo apt install -y python3-psutil
 
 # 2) Activation de ClamAV (correction freshclam init failed)
 sudo systemctl stop clamav-freshclam
