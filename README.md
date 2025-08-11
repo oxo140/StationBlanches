@@ -80,6 +80,7 @@ sudo nano /etc/lightdm/lightdm.conf
 Sous [Seat:*],  :
 
 autologin-user=USER
+
 autologin-user-timeout=0
 
 Puis redémarrer
