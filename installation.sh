@@ -45,6 +45,10 @@ unzip -p "$SCRIPT_DIR/full.zip" > "$SCRIPT_DIR/hashdb/mb_full.txt"
 # 7) Configuration interactive
 echo "[INFO] Configuration interactive..."
 
+# Demande du nom d'utilisateur pour l'autologin
+read -p "Nom d'utilisateur pour l'autologin au démarrage [défaut: sbblanche] : " AUTOLOGIN_USER
+AUTOLOGIN_USER=${AUTOLOGIN_USER:-sbblanche}
+
 # Demande de l'heure d'extinction
 read -p "À quelle heure voulez-vous éteindre le PC automatiquement ? (format HH, ex: 22 pour 22h00) [défaut: 22] : " SHUTDOWN_HOUR
 SHUTDOWN_HOUR=${SHUTDOWN_HOUR:-22}
