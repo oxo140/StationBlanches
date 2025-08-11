@@ -45,11 +45,6 @@ Format : un hash SHA-256 par ligne (64 caractères hexadécimaux).
 
 Utilisé comme liste noire : si un fichier USB a un hash qui correspond → infection.
 
-Mise à jour :
-
-Automatique via cron à 10h00 et 18h00
-
-Téléchargé en ZIP, décompressé, puis stocké dans hashdb/mb_full.txt.
 
 
 ## 🖼️ Images
@@ -68,9 +63,8 @@ Le projet utilise des visuels pour indiquer l'état du scan USB. Ces images sont
 
 ---
 
-## 🔄 Mises à jour automatiques
+## 🔄 Extinction automatique
 
-- Mise à jour de la base de données ClamAV à **21h00** chaque jour (modifiable via `crontab`).
 - Extinction automatique du système à **22h00** pour éviter un fonctionnement prolongé inutile (modifiable via `crontab`).
 
 ---
@@ -79,7 +73,19 @@ Le projet utilise des visuels pour indiquer l'état du scan USB. Ces images sont
 
 - **Désactivez la mise en veille** de votre ordinateur pour assurer un fonctionnement continu.
 - **Activez l'ouverture automatique de session** afin que les services se lancent correctement au démarrage.
+Pour que la station se lance sans intervention :
+
+sudo nano /etc/lightdm/lightdm.conf
+
+Sous [Seat:*],  :
+
+autologin-user=USER
+autologin-user-timeout=0
+
+Puis redémarrer
+
 - ⚠️ **Il est préférable de configurer le démarrage automatique de votre machine via le BIOS pour garantir son allumage sans intervention manuelle.**
+
 
 ---
 
