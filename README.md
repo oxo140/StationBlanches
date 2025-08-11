@@ -6,8 +6,7 @@ Ce projet est conçu pour des Stations Blanches, permettant de scanner les péri
 
 - **Debian 11.8** (ou version supérieure recommandée)
 - **Environnement Xfce** obligatoire
-- Connexion Internet pour téléchargement et mise a jour de la base antivirus.
-
+- Connexion Internet pour téléchargement et mise a jour de la base de hash.
 
 
 ---
@@ -39,18 +38,12 @@ python3 script.py gui
 
 
 📄 À propos de mb_full.txt
-
-    C’est un dump complet de hachages SHA-256 de fichiers malveillants connu, fourni par MalwareBazaar.
-
-    Format : un hash SHA-256 par ligne (64 caractères hexadécimaux).
-
-    Utilisé comme liste noire : si un fichier USB a un hash qui correspond → infection.
-
-    Mise à jour :
-
-        Automatique via cron à 10h00 et 18h00
-
-        Téléchargé en ZIP, décompressé, puis stocké dans hashdb/mb_full.txt.
+C’est un dump complet de hachages SHA-256 de fichiers malveillants connu, fourni par MalwareBazaar.
+Format : un hash SHA-256 par ligne (64 caractères hexadécimaux).
+Utilisé comme liste noire : si un fichier USB a un hash qui correspond → infection.
+Mise à jour :
+Automatique via cron à 10h00 et 18h00
+Téléchargé en ZIP, décompressé, puis stocké dans hashdb/mb_full.txt.
 
 
 ## 🖼️ Images
