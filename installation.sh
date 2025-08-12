@@ -14,7 +14,7 @@ sudo apt update && sudo apt upgrade -y
 
 echo "[INFO] Installation des dépendances..."
 sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk \
-  clamav wget curl python3-pyudev unzip python3-psutil
+  clamav wget curl python3-pyudev unzip python3-psutil xdg-user-dirs
 
 # === ClamAV (freshclam) ===
 echo "[INFO] Activation et démarrage de clamav-freshclam..."
@@ -44,10 +44,12 @@ wget -O "$IMAGES_DIR/perte.png"      "$IMAGE_REPO/perte.png"
 
 # === Récupération des scripts applicatifs ===
 echo "[INFO] Téléchargement des scripts applicatifs..."
-(cd "$INSTALL_DIR" && \
-  curl -O "$IMAGE_REPO/script.py" && \
-  curl -O "$IMAGE_REPO/script_monitor.sh" && \
-  curl -O "$IMAGE_REPO/usb_monitor.py")
+(
+  cd "$INSTALL_DIR"
+  curl -O "$IMAGE_REPO/script.py"
+  curl -O "$IMAGE_REPO/script_monitor.sh"
+  curl -O "$IMAGE_REPO/usb_monitor.py"
+)
 chmod +x "$INSTALL_DIR/script_monitor.sh"
 
 # === Hash DB MalwareBazaar : script d'update + initial fetch ===
@@ -61,10 +63,8 @@ TMP_OUT="$(mktemp)"
 
 mkdir -p "$HASH_DIR"
 
-# Téléchargement silencieux ; échec si code != 0
 wget -q -O "$TMP_ZIP" "https://bazaar.abuse.ch/export/txt/sha256/full/"
 
-# Extraction en flux puis remplacement atomique
 unzip -p "$TMP_ZIP" > "$TMP_OUT"
 if [ -s "$TMP_OUT" ]; then
   mv "$TMP_OUT" "$HASH_DIR/mb_full.txt"
@@ -90,11 +90,8 @@ INSTALL_MAIL=${INSTALL_MAIL:-O}
 
 if [[ "$INSTALL_MAIL" =~ ^[Oo]$ ]] || [[ "$INSTALL_MAIL" == "oui" ]] || [[ "$INSTALL_MAIL" == "yes" ]]; then
     echo "[INFO] Installation du module mail..."
-    
-    # Téléchargement du script d'installation mail
     MAIL_INSTALL_SCRIPT="$(mktemp)"
     wget -O "$MAIL_INSTALL_SCRIPT" "https://raw.githubusercontent.com/oxo140/StationBlanches/main/mailinstall.sh"
-    
     if [ -f "$MAIL_INSTALL_SCRIPT" ] && [ -s "$MAIL_INSTALL_SCRIPT" ]; then
         chmod +x "$MAIL_INSTALL_SCRIPT"
         echo "[INFO] Lancement du script d'installation mail..."
@@ -114,115 +111,58 @@ echo "[INFO] Configuration de la mise à jour automatique de ClamAV (21:00) et a
 (crontab -l 2>/dev/null; echo "0 21 * * * sudo freshclam") | crontab -
 (crontab -l 2>/dev/null; echo "0 22 * * * sudo shutdown -h now") | crontab -
 
-# === Nom utilisateur cible (services user GNOME) ===
-ACTIVE_USER=$(who | awk '{print $1}' | head -n 1)
-echo "Utilisateur détecté : $ACTIVE_USER"
-read -p "Utilisateur pour services ($ACTIVE_USER) : " USERNAME
-USERNAME=${USERNAME:-$ACTIVE_USER}
+# === Nom utilisateur cible (pour autostart GUI) ===
+ACTIVE_USER=$(who | awk '{print $1}' | head -n 1 || true)
+if [ -z "${ACTIVE_USER:-}" ]; then
+  ACTIVE_USER="$SUDO_USER"
+fi
+echo "Utilisateur détecté : ${ACTIVE_USER:-inconnu}"
+read -p "Utilisateur pour l'autostart GUI (${ACTIVE_USER:-root}) : " USERNAME
+USERNAME=${USERNAME:-${ACTIVE_USER:-root}}
 echo "[INFO] Utilisateur sélectionné : $USERNAME"
-USER_UNIT_DIR="/home/$USERNAME/.config/systemd/user"
-sudo -u "$USERNAME" mkdir -p "$USER_UNIT_DIR"
 
-# === Services systemd UTILISATEUR (GNOME) ===
-# GUI principale
-cat > "$USER_UNIT_DIR/station_blanche.service" << EOF
-[Unit]
-Description=Station Blanche - UI Tk
-After=graphical-session.target
-Wants=graphical-session.target
-PartOf=graphical-session.target
+USER_HOME=$(getent passwd "$USERNAME" | cut -d: -f6)
+if [ -z "$USER_HOME" ]; then
+  echo "[ERREUR] Impossible de déterminer le HOME de $USERNAME"
+  exit 1
+fi
 
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 $INSTALL_DIR/script.py gui
-WorkingDirectory=$INSTALL_DIR
-Restart=on-failure
-RestartSec=3
+# === Autostart GUI (XDG) ===
+echo "[INFO] Création de l'autostart GUI (XDG)..."
+AUTOSTART_DIR="$USER_HOME/.config/autostart"
+sudo -u "$USERNAME" mkdir -p "$AUTOSTART_DIR"
 
-[Install]
-WantedBy=graphical-session.target
+DESKTOP_FILE="$AUTOSTART_DIR/station-blanche-gui.desktop"
+cat <<EOF | sudo tee "$DESKTOP_FILE" >/dev/null
+[Desktop Entry]
+Type=Application
+Name=Station Blanche
+Comment=Lance l'interface graphique de Station Blanche
+Exec=/usr/bin/env python3 "$SCRIPT_PATH" gui
+Icon=$IMAGES_DIR/clean.png
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+OnlyShowIn=GNOME;KDE;XFCE;LXDE;LXQt;MATE;Cinnamon;Unity;
 EOF
+sudo chown "$USERNAME":"$USERNAME" "$DESKTOP_FILE"
 
-# Monitor
-cat > "$USER_UNIT_DIR/script_monitor.service" << EOF
-[Unit]
-Description=Monitor Station Blanche
-After=graphical-session.target
-Wants=graphical-session.target
-PartOf=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=$INSTALL_DIR/script_monitor.sh
-WorkingDirectory=$INSTALL_DIR
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=graphical-session.target
-EOF
-
-# USB monitor
-cat > "$USER_UNIT_DIR/usb_monitor.service" << EOF
-[Unit]
-Description=USB Monitor Station Blanche
-After=graphical-session.target
-Wants=graphical-session.target
-PartOf=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 $INSTALL_DIR/usb_monitor.py
-WorkingDirectory=$INSTALL_DIR
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=graphical-session.target
-EOF
-
-# Timer d'update hash (USER) — 10:00 et 18:00, persistant
-cat > "$USER_UNIT_DIR/update_hashdb.service" << EOF
-[Unit]
-Description=MAJ Hash DB MalwareBazaar
-
-[Service]
-Type=oneshot
-ExecStart=$INSTALL_DIR/update_hashdb.sh
-WorkingDirectory=$INSTALL_DIR
-EOF
-
-cat > "$USER_UNIT_DIR/update_hashdb.timer" << EOF
-[Unit]
-Description=MAJ Hash DB 10h et 18h (user)
-
-[Timer]
-OnCalendar=*-*-* 10:00:00
-OnCalendar=*-*-* 18:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-# Activer la persistance utilisateur (permet aux timers user de tourner sans session)
+# === (Optionnel) Services systemd utilisateur pour les scripts non-GUI ===
+# Tu pourras ajouter ici des unités --user si tu veux que des daemons tournent en arrière-plan.
+# On laisse juste le "linger" prêt si tu en as besoin.
+echo "[INFO] Activation du linger utilisateur (optionnel pour timers/daemons en arrière-plan)..."
 sudo loginctl enable-linger "$USERNAME" || true
 
-# Activer et démarrer (user)
-sudo -u "$USERNAME" XDG_RUNTIME_DIR=/run/user/$(id -u "$USERNAME") systemctl --user daemon-reload
-sudo -u "$USERNAME" XDG_RUNTIME_DIR=/run/user/$(id -u "$USERNAME") systemctl --user enable --now \
-  station_blanche.service script_monitor.service usb_monitor.service update_hashdb.timer
-
-# Attribution des droits au bon utilisateur détecté
-chown -R "$USERNAME":"$USERNAME" hashdb station_blanche_hash.log
-
-# Droits : lecture/écriture/exécution pour l'utilisateur uniquement
-chmod -R 700 hashdb
-chmod 600 station_blanche_hash.log
+# === Permissions utiles ===
+chmod 777 "$HASH_DIR" || true
+touch "$INSTALL_DIR/station_blanche_hash.log" && chmod 666 "$INSTALL_DIR/station_blanche_hash.log" || true
 
 # === Fin ===
 echo "[INFO] Installation terminée."
-echo "[INFO] Vérifs :"
-echo "- systemctl --user status station_blanche.service (en session $USERNAME)"
-echo "- systemctl --user list-timers | grep update_hashdb"
-echo "- journalctl --user -u station_blanche.service -n 100 --no-pager"
+echo ""
+echo "=== Vérifs / Utilisation ==="
+echo "- L'UI se lancera automatiquement à la connexion de $USERNAME dans sa session graphique."
+echo "- Test manuel : /usr/bin/env python3 \"$SCRIPT_PATH\" gui"
+echo "- Autostart : $DESKTOP_FILE"
+echo "- Hash update manuel : \"$INSTALL_DIR/update_hashdb.sh\""
+echo "- Cron : freshclam à 21:00, shutdown à 22:00 (crontab utilisateur)."
