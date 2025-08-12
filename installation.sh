@@ -24,42 +24,38 @@ sudo systemctl start clamav-freshclam
 echo "[INFO] Première mise à jour de la base ClamAV..."
 sudo freshclam || true
 
-# === Répertoire d'images ===
-echo "[INFO] Vérification/Création du répertoire d'images..."
+# === Répertoires et ressources ===
+echo "[INFO] Préparation des répertoires..."
 sudo mkdir -p "$IMAGES_DIR"
+mkdir -p "$HASH_DIR"
+
+if [ ! -d "/quarantaine" ]; then
+  sudo mkdir /quarantaine
+  sudo chown clamav:clamav /quarantaine
+fi
 
 # === Téléchargement des images UI ===
-echo "[INFO] Téléchargement des images..."
+echo "[INFO] Téléchargement des images UI..."
 wget -O "$IMAGES_DIR/no_usb.png"     "$IMAGE_REPO/no_usb.png"
 wget -O "$IMAGES_DIR/scanning.png"   "$IMAGE_REPO/scanning.png"
 wget -O "$IMAGES_DIR/infected.png"   "$IMAGE_REPO/infected.png"
 wget -O "$IMAGES_DIR/clean.png"      "$IMAGE_REPO/clean.png"
 wget -O "$IMAGES_DIR/perte.png"      "$IMAGE_REPO/perte.png"
 
-# === Répertoire de quarantaine ===
-echo "[INFO] Vérification du répertoire de quarantaine..."
-if [ ! -d "/quarantaine" ]; then
-  sudo mkdir /quarantaine
-  sudo chown clamav:clamav /quarantaine
-fi
-
 # === Récupération des scripts applicatifs ===
-echo "[INFO] Téléchargement des scripts principaux..."
+echo "[INFO] Téléchargement des scripts applicatifs..."
 (cd "$INSTALL_DIR" && \
-  curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script.py && \
-  curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/script_monitor.sh && \
-  curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/usb_monitor.py)
+  curl -O "$IMAGE_REPO/script.py" && \
+  curl -O "$IMAGE_REPO/script_monitor.sh" && \
+  curl -O "$IMAGE_REPO/usb_monitor.py")
 chmod +x "$INSTALL_DIR/script_monitor.sh"
 
 # === Hash DB MalwareBazaar : script d'update + initial fetch ===
 echo "[INFO] Préparation de la base hash (init + update automatique)..."
-mkdir -p "$HASH_DIR"
-
 cat > "$INSTALL_DIR/update_hashdb.sh" << 'EOF'
 #!/bin/bash
 set -euo pipefail
-SCRIPT_DIR="__INSTALL_DIR__"
-HASH_DIR="$SCRIPT_DIR/hashdb"
+HASH_DIR="__HASH_DIR__"
 TMP_ZIP="$(mktemp --suffix=.zip)"
 TMP_OUT="$(mktemp)"
 
@@ -79,89 +75,98 @@ else
 fi
 rm -f "$TMP_ZIP"
 EOF
-
-# Injecte le chemin d'installation réel dans le script\lsed -i "s|__INSTALL_DIR__|$INSTALL_DIR|g" "$INSTALL_DIR/update_hashdb.sh"
+sed -i "s|__HASH_DIR__|$HASH_DIR|g" "$INSTALL_DIR/update_hashdb.sh"
 chmod +x "$INSTALL_DIR/update_hashdb.sh"
 
 # Fetch initial
 "$INSTALL_DIR/update_hashdb.sh" || echo "[WARN] Échec de l'init de la base hash (continuation)."
 
-# === Cron pour freshclam & shutdown (inchangés) ===
-echo "[INFO] Configuration de la mise à jour automatique de ClamAV tous les jours à 21h00..."
-(crontab -l 2>/dev/null; echo "00 21 * * * sudo freshclam") | crontab -
+# === Crons ClamAV & shutdown ===
+echo "[INFO] Configuration de la mise à jour automatique de ClamAV (21:00) et arrêt (22:00)..."
+(crontab -l 2>/dev/null; echo "0 21 * * * sudo freshclam") | crontab -
+(crontab -l 2>/dev/null; echo "0 22 * * * sudo shutdown -h now") | crontab -
 
-echo "[INFO] Configuration de l'arrêt automatique à 22h00..."
-(crontab -l 2>/dev/null; echo "00 22 * * * sudo shutdown -h now") | crontab -
-
-# === DISPLAY pour éventuellement lancer une UI en TTY ===
-echo "[INFO] Vérification et ajout de 'export DISPLAY=:0' dans ~/.bashrc..."
-if ! grep -q "export DISPLAY=:0" ~/.bashrc; then
-  echo "export DISPLAY=:0" >> ~/.bashrc
-  echo "[INFO] Ajouté."
-else
-  echo "[INFO] Déjà présent."
-fi
-
-# Appliquer immédiatement (dans ce shell)
-source ~/.bashrc || true
-
-# === Nom d'utilisateur ciblé pour les services ===
+# === Nom utilisateur cible (services user GNOME) ===
 ACTIVE_USER=$(who | awk '{print $1}' | head -n 1)
-echo "Nom d'utilisateur détecté : $ACTIVE_USER"
-read -p "Entrez le nom d'utilisateur pour les services systemd ($ACTIVE_USER) : " USERNAME
+echo "Utilisateur détecté : $ACTIVE_USER"
+read -p "Utilisateur pour services ($ACTIVE_USER) : " USERNAME
 USERNAME=${USERNAME:-$ACTIVE_USER}
-echo "[INFO] Nom d'utilisateur sélectionné : $USERNAME"
+echo "[INFO] Utilisateur sélectionné : $USERNAME"
+USER_UNIT_DIR="/home/$USERNAME/.config/systemd/user"
+sudo -u "$USERNAME" mkdir -p "$USER_UNIT_DIR"
 
-# === Services systemd (script_monitor, usb_monitor) ===
-echo "[INFO] Création du service systemd pour script_monitor.sh..."
-cat << EOF2 | sudo tee /etc/systemd/system/script_monitor.service >/dev/null
+# === Services systemd UTILISATEUR (GNOME) ===
+# GUI principale
+cat > "$USER_UNIT_DIR/station_blanche.service" << EOF
 [Unit]
-Description=Surveillance de l'exécution du script Python
-After=network.target
+Description=Station Blanche - UI Tk
+After=graphical-session.target
+Wants=graphical-session.target
+PartOf=graphical-session.target
 
 [Service]
+Type=simple
+ExecStart=/usr/bin/python3 $INSTALL_DIR/script.py gui
+WorkingDirectory=$INSTALL_DIR
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+
+# Monitor
+cat > "$USER_UNIT_DIR/script_monitor.service" << EOF
+[Unit]
+Description=Monitor Station Blanche
+After=graphical-session.target
+Wants=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
 ExecStart=$INSTALL_DIR/script_monitor.sh
-Restart=always
-User=$USERNAME
 WorkingDirectory=$INSTALL_DIR
+Restart=always
+RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
-EOF2
+WantedBy=graphical-session.target
+EOF
 
-
-echo "[INFO] Création du service systemd pour usb_monitor.py..."
-cat << EOF3 | sudo tee /etc/systemd/system/usb_monitor.service >/dev/null
+# USB monitor
+cat > "$USER_UNIT_DIR/usb_monitor.service" << EOF
 [Unit]
-Description=Surveillance des périphériques USB
-After=network.target
+Description=USB Monitor Station Blanche
+After=graphical-session.target
+Wants=graphical-session.target
+PartOf=graphical-session.target
 
 [Service]
+Type=simple
 ExecStart=/usr/bin/python3 $INSTALL_DIR/usb_monitor.py
-Restart=always
-User=$USERNAME
 WorkingDirectory=$INSTALL_DIR
+Restart=always
+RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
-EOF3
+WantedBy=graphical-session.target
+EOF
 
-# === Service + Timer systemd pour la mise à jour quotidienne de la hash DB ===
-echo "[INFO] Création du service + timer pour update_hashdb (quotidien, 10h & 18h)..."
-cat << EOF4 | sudo tee /etc/systemd/system/update_hashdb.service >/dev/null
+# Timer d'update hash (USER) — 10:00 et 18:00, persistant
+cat > "$USER_UNIT_DIR/update_hashdb.service" << EOF
 [Unit]
-Description=Met à jour la base de hash (MalwareBazaar)
+Description=MAJ Hash DB MalwareBazaar
 
 [Service]
 Type=oneshot
-User=$USERNAME
 ExecStart=$INSTALL_DIR/update_hashdb.sh
 WorkingDirectory=$INSTALL_DIR
-EOF4
+EOF
 
-cat << 'EOF5' | sudo tee /etc/systemd/system/update_hashdb.timer >/dev/null
+cat > "$USER_UNIT_DIR/update_hashdb.timer" << EOF
 [Unit]
-Description=Lance update_hashdb deux fois par jour (10:00, 18:00)
+Description=MAJ Hash DB 10h et 18h (user)
 
 [Timer]
 OnCalendar=*-*-* 10:00:00
@@ -170,28 +175,19 @@ Persistent=true
 
 [Install]
 WantedBy=timers.target
-EOF5
+EOF
 
-# === Activation des services/timers ===
-echo "[INFO] Activation et démarrage des services systemd..."
-sudo systemctl daemon-reload
-sudo systemctl enable --now script_monitor.service
-sudo systemctl enable --now usb_monitor.service
+# Activer la persistance utilisateur (permet aux timers user de tourner sans session)
+sudo loginctl enable-linger "$USERNAME" || true
 
-sudo systemctl enable --now update_hashdb.timer
-
-# === Optionnel : installation système d'envoi de mails ===
-read -p "[INFO] Souhaitez-vous mettre en place l'envoi d'e-mails en cas d'infection détectée ? (oui/non) : " INSTALL_MAIL
-if [[ "${INSTALL_MAIL:-non}" == "oui" ]]; then
-  echo "[INFO] Téléchargement et exécution de mailinstall.sh..."
-  (cd "$INSTALL_DIR" && curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/mailinstall.sh)
-  chmod +x "$INSTALL_DIR/mailinstall.sh"
-  "$INSTALL_DIR/mailinstall.sh"
-else
-  echo "[INFO] Envoi d'e-mails non configuré."
-fi
+# Activer et démarrer (user)
+sudo -u "$USERNAME" XDG_RUNTIME_DIR=/run/user/$(id -u "$USERNAME") systemctl --user daemon-reload
+sudo -u "$USERNAME" XDG_RUNTIME_DIR=/run/user/$(id -u "$USERNAME") systemctl --user enable --now \
+  station_blanche.service script_monitor.service usb_monitor.service update_hashdb.timer
 
 # === Fin ===
-echo "[INFO] Installation terminée avec succès."
-echo "[INFO] Pensez à désactiver la mise en veille de l'ordinateur et à activer l'ouverture automatique de session."
-echo "[INFO] Vérifier le timer : 'sudo systemctl status update_hashdb.timer' et voir les prochaines exécutions avec 'systemctl list-timers | grep update_hashdb'"
+echo "[INFO] Installation terminée."
+echo "[INFO] Vérifs :"
+echo "- systemctl --user status station_blanche.service (en session $USERNAME)"
+echo "- systemctl --user list-timers | grep update_hashdb"
+echo "- journalctl --user -u station_blanche.service -n 100 --no-pager"
