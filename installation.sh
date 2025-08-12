@@ -16,13 +16,6 @@ echo "[INFO] Installation des dépendances..."
 sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk \
   clamav wget curl python3-pyudev unzip python3-psutil xdg-user-dirs
 
-# === ClamAV (freshclam) ===
-echo "[INFO] Activation et démarrage de clamav-freshclam..."
-sudo systemctl enable clamav-freshclam
-sudo systemctl start clamav-freshclam
-
-echo "[INFO] Première mise à jour de la base ClamAV..."
-sudo freshclam || true
 
 # === Répertoires et ressources ===
 echo "[INFO] Préparation des répertoires..."
@@ -52,34 +45,6 @@ echo "[INFO] Téléchargement des scripts applicatifs..."
 )
 chmod +x "$INSTALL_DIR/script_monitor.sh"
 
-# === Hash DB MalwareBazaar : script d'update + initial fetch ===
-echo "[INFO] Préparation de la base hash (init + update automatique)..."
-cat > "$INSTALL_DIR/update_hashdb.sh" << 'EOF'
-#!/bin/bash
-set -euo pipefail
-HASH_DIR="__HASH_DIR__"
-TMP_ZIP="$(mktemp --suffix=.zip)"
-TMP_OUT="$(mktemp)"
-
-mkdir -p "$HASH_DIR"
-
-wget -q -O "$TMP_ZIP" "https://bazaar.abuse.ch/export/txt/sha256/full/"
-
-unzip -p "$TMP_ZIP" > "$TMP_OUT"
-if [ -s "$TMP_OUT" ]; then
-  mv "$TMP_OUT" "$HASH_DIR/mb_full.txt"
-  echo "[INFO] Hash DB mise à jour : $(wc -l < "$HASH_DIR/mb_full.txt") lignes"
-else
-  echo "[WARN] Fichier vide, update ignorée."
-  rm -f "$TMP_OUT"
-fi
-rm -f "$TMP_ZIP"
-EOF
-sed -i "s|__HASH_DIR__|$HASH_DIR|g" "$INSTALL_DIR/update_hashdb.sh"
-chmod +x "$INSTALL_DIR/update_hashdb.sh"
-
-# Fetch initial
-"$INSTALL_DIR/update_hashdb.sh" || echo "[WARN] Échec de l'init de la base hash (continuation)."
 
 # === Module Mail Optionnel ===
 echo ""
@@ -106,9 +71,8 @@ else
     echo "[INFO] Module mail non installé."
 fi
 
-# === Crons ClamAV & shutdown ===
-echo "[INFO] Configuration de la mise à jour automatique de ClamAV (21:00) et arrêt (22:00)..."
-(crontab -l 2>/dev/null; echo "0 21 * * * sudo freshclam") | crontab -
+# === Crons shutdown ===
+
 (crontab -l 2>/dev/null; echo "0 22 * * * sudo shutdown -h now") | crontab -
 
 # === Nom utilisateur cible (pour autostart GUI) ===
