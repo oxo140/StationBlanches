@@ -132,17 +132,52 @@ echo "[INFO] Démarrage automatique configuré via XFCE autostart et .bashrc"
 echo "[INFO] Création du script de vérification et auto-start..."
 cat > "$SCRIPT_DIR/check_and_start_script.sh" << 'EOF'
 #!/bin/bash
-# Vérifie si le script est déjà en cours d'exécution
-if ! pgrep -f "python3.*script.py gui" > /dev/null; then
-    cd /home/sbblanche
+# Script de vérification et lancement Station Blanche avec logs
+LOG_FILE="/home/sbblanche/autostart.log"
+echo "$(date): Début vérification script" >> "$LOG_FILE"
+
+# Attendre que l'environnement graphique soit prêt
+sleep 3
+
+# Vérification de l'environnement graphique
+if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
-    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-    # Cache le curseur de la souris
-    unclutter -idle 1 -root &
-    /usr/bin/python3 script.py gui &
-    sleep 8
-    xdotool key Escape 2>/dev/null || true
+    echo "$(date): DISPLAY défini sur :0" >> "$LOG_FILE"
 fi
+
+if [ -z "$XDG_RUNTIME_DIR" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+    echo "$(date): XDG_RUNTIME_DIR défini" >> "$LOG_FILE"
+fi
+
+# Vérifier si le script est déjà en cours d'exécution
+if pgrep -f "python3.*script.py gui" > /dev/null; then
+    echo "$(date): Script déjà en cours, pas de nouveau lancement" >> "$LOG_FILE"
+    exit 0
+fi
+
+echo "$(date): Lancement du script Python GUI" >> "$LOG_FILE"
+cd /home/sbblanche
+
+# Cache le curseur de la souris (si disponible)
+if command -v unclutter >/dev/null 2>&1; then
+    unclutter -idle 1 -root &
+    echo "$(date): Unclutter démarré" >> "$LOG_FILE"
+fi
+
+# Lancement du script principal
+/usr/bin/python3 script.py gui >> "$LOG_FILE" 2>&1 &
+PYTHON_PID=$!
+echo "$(date): Script Python lancé avec PID: $PYTHON_PID" >> "$LOG_FILE"
+
+# Attendre un peu puis envoyer ESC
+sleep 8
+if command -v xdotool >/dev/null 2>&1; then
+    xdotool key Escape 2>/dev/null || true
+    echo "$(date): Commande ESC envoyée" >> "$LOG_FILE"
+fi
+
+echo "$(date): Fin du script de lancement" >> "$LOG_FILE"
 EOF
 chmod +x "$SCRIPT_DIR/check_and_start_script.sh"
 
