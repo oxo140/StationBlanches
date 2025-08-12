@@ -11,7 +11,7 @@ IMAGES_DIR="/SB-Blanc"
 echo "[INFO] Mise à jour du système et installation des dépendances..."
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git python3 python3-pip python3-tk python3-pil python3-pil.imagetk clamav wget curl python3-pyudev xdotool unzip unclutter
-sudo apt install -y python3-selenium
+sudo apt install python3-selenium
 sudo apt install -y python3-psutil
 
 # 2) Activation de ClamAV (correction freshclam init failed)
@@ -80,22 +80,42 @@ fi
 # Configuration de l'autologin
 echo "[INFO] Configuration de l'autologin pour l'utilisateur: $AUTOLOGIN_USER"
 
+# Création du groupe autologin et ajout de l'utilisateur
+echo "[INFO] Création du groupe autologin..."
+sudo groupadd -r autologin 2>/dev/null || true
+sudo usermod -a -G autologin $AUTOLOGIN_USER
+
 # Sauvegarde du fichier lightdm.conf original
 sudo cp /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.backup 2>/dev/null || true
 
-# Décommenter ou ajouter les lignes d'autologin dans la section [Seat:*]
-sudo sed -i '/^\[Seat:\*\]/,/^\[/ {
-    s/^#autologin-user=.*/autologin-user='$AUTOLOGIN_USER'/
-    s/^#autologin-user-timeout=.*/autologin-user-timeout=0/
-}' /etc/lightdm/lightdm.conf
+# Configuration complète de LightDM avec toutes les options nécessaires
+echo "[INFO] Configuration de LightDM..."
+sudo bash -c "cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
+[Seat:*]
+autologin-user=$AUTOLOGIN_USER
+autologin-user-timeout=0
+autologin-session=xfce
+user-session=xfce
+greeter-session=lightdm-gtk-greeter
+EOF"
 
-# Si les lignes n'existent pas, les ajouter après [Seat:*]
-if ! sudo grep -q "^autologin-user=" /etc/lightdm/lightdm.conf; then
-    sudo sed -i '/^\[Seat:\*\]/a autologin-user='$AUTOLOGIN_USER'' /etc/lightdm/lightdm.conf
-fi
-if ! sudo grep -q "^autologin-user-timeout=" /etc/lightdm/lightdm.conf; then
-    sudo sed -i '/^autologin-user=/a autologin-user-timeout=0' /etc/lightdm/lightdm.conf
-fi
+# Création du fichier .dmrc pour l'utilisateur (nécessaire pour XFCE)
+echo "[INFO] Création du fichier .dmrc pour l'utilisateur..."
+sudo -u $AUTOLOGIN_USER bash -c "cat > /home/$AUTOLOGIN_USER/.dmrc << EOF
+[Desktop]
+Session=xfce
+EOF"
+sudo chown $AUTOLOGIN_USER:$AUTOLOGIN_USER /home/$AUTOLOGIN_USER/.dmrc
+
+# Désactiver le keyring pour éviter les demandes de mot de passe
+echo "[INFO] Configuration du keyring pour éviter les demandes de mot de passe..."
+sudo -u $AUTOLOGIN_USER mkdir -p /home/$AUTOLOGIN_USER/.config/autostart
+sudo -u $AUTOLOGIN_USER bash -c "cat > /home/$AUTOLOGIN_USER/.config/autostart/gnome-keyring-secrets.desktop << EOF
+[Desktop Entry]
+Type=Application
+Name=Secrets
+Hidden=true
+EOF"
 
 echo "[INFO] Autologin configuré pour l'utilisateur: $AUTOLOGIN_USER"
 
@@ -108,7 +128,7 @@ sudo -u $AUTOLOGIN_USER bash -c "cat > /home/$AUTOLOGIN_USER/.config/autostart/s
 Type=Application
 Name=Station Blanche Auto
 Comment=Lancement automatique Station Blanche
-Exec=/home/sbblanche/check_and_start_script.sh
+Exec=bash -c 'sleep 5 && /home/sbblanche/check_and_start_script.sh'
 Icon=applications-development
 Hidden=false
 NoDisplay=false
@@ -122,6 +142,7 @@ echo "[INFO] Ajout du lancement au profil utilisateur..."
 if ! grep -q "check_and_start_script.sh" /home/$AUTOLOGIN_USER/.bashrc 2>/dev/null; then
     sudo -u $AUTOLOGIN_USER bash -c "echo '# Auto-start Station Blanche' >> /home/$AUTOLOGIN_USER/.bashrc"
     sudo -u $AUTOLOGIN_USER bash -c "echo 'if [ \"\$DISPLAY\" ] && [ -z \"\$SSH_CLIENT\" ]; then' >> /home/$AUTOLOGIN_USER/.bashrc"
+    sudo -u $AUTOLOGIN_USER bash -c "echo '    sleep 3' >> /home/$AUTOLOGIN_USER/.bashrc"
     sudo -u $AUTOLOGIN_USER bash -c "echo '    /home/sbblanche/check_and_start_script.sh &' >> /home/$AUTOLOGIN_USER/.bashrc"
     sudo -u $AUTOLOGIN_USER bash -c "echo 'fi' >> /home/$AUTOLOGIN_USER/.bashrc"
 fi
@@ -239,9 +260,10 @@ chmod 777 "$SCRIPT_DIR/station_blanche_hash.log" 2>/dev/null || true
 
 echo "✅ Installation terminée."
 echo "[INFO] Autologin configuré pour: $AUTOLOGIN_USER"
-echo "[INFO] Le script se lancera automatiquement toutes les minutes via crontab."
+echo "[INFO] Le script se lancera automatiquement avec plusieurs méthodes de sauvegarde"
 echo "[INFO] PC configuré pour s'éteindre à ${SHUTDOWN_HOUR}h00"
 echo "[INFO] Curseur de souris automatiquement caché"
+echo "[INFO] Logs de démarrage : tail -f $SCRIPT_DIR/autostart.log"
 echo "[INFO] Pour vérifier le crontab : crontab -l"
 echo "[INFO] Pour voir les processus : pgrep -f 'python3.*script.py gui'"
 echo "[INFO] Logs mise à jour hash : tail -f $SCRIPT_DIR/hashdb_update.log"
