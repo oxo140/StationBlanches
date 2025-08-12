@@ -22,11 +22,6 @@ echo "[INFO] Préparation des répertoires..."
 sudo mkdir -p "$IMAGES_DIR"
 mkdir -p "$HASH_DIR"
 
-if [ ! -d "/quarantaine" ]; then
-  sudo mkdir /quarantaine
-  sudo chown clamav:clamav /quarantaine
-fi
-
 # === Téléchargement des images UI ===
 echo "[INFO] Téléchargement des images UI..."
 wget -O "$IMAGES_DIR/no_usb.png"     "$IMAGE_REPO/no_usb.png"
