@@ -184,6 +184,15 @@ sudo loginctl enable-linger "$USERNAME" || true
 sudo -u "$USERNAME" XDG_RUNTIME_DIR=/run/user/$(id -u "$USERNAME") systemctl --user daemon-reload
 sudo -u "$USERNAME" XDG_RUNTIME_DIR=/run/user/$(id -u "$USERNAME") systemctl --user enable --now \
   station_blanche.service script_monitor.service usb_monitor.service update_hashdb.timer
+# Se placer dans le répertoire où est lancé le script
+cd "$(dirname "$0")"
+
+# Donner la propriété à l'utilisateur "machine"
+chown -R machine:machine hashdb station_blanche_hash.log
+
+# Droits : lecture/écriture/exécution pour "machine" uniquement
+chmod -R 700 hashdb
+chmod 600 station_blanche_hash.log
 
 # === Fin ===
 echo "[INFO] Installation terminée."
