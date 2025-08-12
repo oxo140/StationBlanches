@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Station Blanche – MODE HASH ultra-rapide (SHA-256) – V3 (avec e-mail)
+Station Blanche – MODE HASH ultra-rapide (SHA-256) – V3 (avec e-mail) – Compatible Python 3.9 (Debian 11)
 
-Modifs par rapport à V2 :
-- Ajout d'un **hook e-mail** qui lance `mail.py` en **asynchrone** dès qu'au moins 1 menace est détectée.
-- Aucune autre logique changée (UI, temps d'affichage, etc.).
+Modifs pour compatibilité 3.9 :
+- Remplacement des annotations "str | None" par "Optional[str]".
+- Remplacement des types d’annotations union équivalents.
+- Utilisation de typing.Optional / List / Set / Dict là où nécessaire.
 
 Pré-requis :
 - Place `mail.py` dans le **même dossier** que ce script.
-- `mail.py` n'attend **aucun argument** (il prend tout en charge).
+- `mail.py` n'attend **aucun argument**.
 - Si tu veux attacher des logs existants, ajuste `files_to_attach` dans `mail.py` (ex: "station_blanche_hash.log" ou "station_blanche.log").
 """
 
@@ -27,6 +28,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from queue import Queue, Empty
 from pathlib import Path
+from typing import Optional, List, Set, Dict
 
 import tkinter as tk
 from tkinter import ttk
@@ -211,7 +213,7 @@ class FastProgressWindow:
             pass
 
 # ===================== Images helpers =====================
-IMAGE_CACHE: dict[str, ImageTk.PhotoImage] = {}
+IMAGE_CACHE: Dict[str, ImageTk.PhotoImage] = {}
 
 def preload_images(tk_root: tk.Tk):
     global IMAGE_CACHE
@@ -245,16 +247,16 @@ def show_image_for(label_widget: tk.Label, image_path: str, seconds: float):
 
 # ============ Détection USB & collecte récursive ==========
 previous_mounts = set()
-current_mount: str | None = None
-last_scanned_mount: str | None = None
+current_mount: Optional[str] = None
+last_scanned_mount: Optional[str] = None
 scan_lock = threading.Lock()
 scan_in_progress = threading.Event()
 STOP_EVENT = threading.Event()
-post_scan_state: str | None = None
+post_scan_state: Optional[str] = None
 
 
-def get_usb_mounts() -> list[str]:
-    mounts: list[str] = []
+def get_usb_mounts() -> List[str]:
+    mounts: List[str] = []
     for mp in ['/media', '/mnt']:
         if os.path.exists(mp):
             try:
@@ -294,8 +296,8 @@ def get_usb_mounts() -> list[str]:
     return uniq
 
 
-def collect_files(usb_path: str) -> list[str]:
-    files: list[str] = []
+def collect_files(usb_path: str) -> List[str]:
+    files: List[str] = []
     ignore_dirs = {'System Volume Information', '$RECYCLE.BIN', '.Trash-1000'}
     for dirpath, dirs, filenames in os.walk(usb_path):
         if not os.path.exists(usb_path):
@@ -309,7 +311,7 @@ def collect_files(usb_path: str) -> list[str]:
 
 # ===================== Hash DB =====================
 
-def normalize_hash(line: str) -> str | None:
+def normalize_hash(line: str) -> Optional[str]:
     s = line.strip().lower()
     if not s:
         return None
@@ -321,8 +323,8 @@ def normalize_hash(line: str) -> str | None:
     return None
 
 
-def load_hash_db(paths: list[Path]) -> set[str]:
-    hashes: set[str] = set()
+def load_hash_db(paths: List[Path]) -> Set[str]:
+    hashes: Set[str] = set()
     for p in paths:
         try:
             if p.is_file():
@@ -349,7 +351,7 @@ def load_hash_db(paths: list[Path]) -> set[str]:
 
 # ===================== Hashing =====================
 
-def sha256_file(path: str) -> str | None:
+def sha256_file(path: str) -> Optional[str]:
     h = hashlib.sha256()
     try:
         with open(path, 'rb') as f:
@@ -383,7 +385,7 @@ def notify_email_async():
 
 # ===================== Scan (mode hash) =====================
 
-def scan_hash_mode(tk_root: tk.Tk, status_label: tk.Label, usb_path: str, db_hashes: set[str]):
+def scan_hash_mode(tk_root: tk.Tk, status_label: tk.Label, usb_path: str, db_hashes: Set[str]):
     global post_scan_state
     STOP_EVENT.clear()
     update_image_cached(status_label, IMAGE_SCANNING)
@@ -488,7 +490,7 @@ def increment_usb_counter(path_file: str = "NBCLE.txt"):
         logger.exception("Erreur écriture stats")
 
 
-def main_loop_hash(tk_root: tk.Tk, status_label: tk.Label, db_hashes: set[str]):
+def main_loop_hash(tk_root: tk.Tk, status_label: tk.Label, db_hashes: Set[str]):
     global current_mount, last_scanned_mount, post_scan_state
     logger.info("🚀 Démarrage de la boucle principale (MODE HASH)")
     while True:
@@ -594,7 +596,7 @@ def update_full(out_path: Path):
 
 def run_gui():
     # Charger la DB
-    paths = [HASH_DB_DIR]
+    paths: List[Path] = [HASH_DB_DIR]
     if LOCAL_HASH_FILE.exists():
         paths.append(LOCAL_HASH_FILE)
     db = load_hash_db(paths)
