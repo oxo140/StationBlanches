@@ -30,6 +30,14 @@ from queue import Queue, Empty
 from pathlib import Path
 from typing import Optional, List, Set, Dict
 
+import os
+import sys
+import io
+import tempfile
+import urllib.request
+import urllib.error
+from zipfile import ZipFile, BadZipFile
+
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
@@ -76,6 +84,84 @@ logger.addHandler(_handler_rot)
 logger.addHandler(_stream)
 
 # ===================== UI =====================
+
+ABUSECH_URL = "https://bazaar.abuse.ch/export/txt/sha256/full/"
+HASH_SUBPATH = os.path.join("hashdb", "mb_full.txt")
+USER_AGENT = "Mozilla/5.0 (hashdb-updater; +local)"
+
+def _script_root() -> str:
+    # Répertoire où se trouve le script Python
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+def _download_bytes(url: str, timeout: int = 60) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+def _extract_from_zip_or_plain(data: bytes) -> bytes:
+    """Retourne le contenu texte (bytes) depuis un zip (premier fichier) ou tel quel si déjà texte."""
+    # Essaye comme ZIP
+    try:
+        with ZipFile(io.BytesIO(data)) as zf:
+            # Choisit le premier fichier "texte" s'il existe, sinon le premier tout court
+            names = [n for n in zf.namelist() if not n.endswith("/")]
+            if not names:
+                raise ValueError("ZIP sans contenu fichier.")
+            # Prenons le premier
+            with zf.open(names[0], "r") as fh:
+                return fh.read()
+    except BadZipFile:
+        # Pas un zip -> probablement texte brut
+        return data
+
+def update_hash_db() -> None:
+    root = _script_root()
+    dest_dir = os.path.join(root, os.path.dirname(HASH_SUBPATH))
+    dest_path = os.path.join(root, HASH_SUBPATH)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    try:
+        blob = _download_bytes(ABUSECH_URL)
+    except urllib.error.URLError as e:
+        print(f"[ERREUR] Téléchargement échoué: {e}", file=sys.stderr)
+        return
+
+    try:
+        content = _extract_from_zip_or_plain(blob)
+    except Exception as e:
+        print(f"[ERREUR] Extraction ZIP/texte: {e}", file=sys.stderr)
+        return
+
+    # Vérif basique : non vide et contient au moins une fin de ligne
+    if not content or content.strip() == b"":
+        print("[ERREUR] Contenu vide, abandon.", file=sys.stderr)
+        return
+
+    # Écriture atomique
+    try:
+        with tempfile.NamedTemporaryFile("wb", delete=False, dir=dest_dir) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        # Remplacement atomique
+        os.replace(tmp_path, dest_path)
+    finally:
+        # Si os.replace a échoué, nettoyer le tmp
+        try:
+            if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except Exception:
+            pass
+
+    # Comptage rapide des lignes
+    line_count = content.count(b"\n")
+    print(f"[INFO] Hash DB mise à jour : {line_count} lignes -> {dest_path}")
+
+# Exemple: lancer la MAJ au démarrage puis poursuivre ton programme
+if __name__ == "__main__":
+    update_hash_db()
+
 class FastProgressWindow:
     def __init__(self, parent, total_files=0):
         self.parent = parent
