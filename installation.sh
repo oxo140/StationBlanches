@@ -81,6 +81,34 @@ chmod +x "$INSTALL_DIR/update_hashdb.sh"
 # Fetch initial
 "$INSTALL_DIR/update_hashdb.sh" || echo "[WARN] Échec de l'init de la base hash (continuation)."
 
+# === Module Mail Optionnel ===
+echo ""
+echo "=== MODULE MAIL ==="
+echo "Le module mail permet d'envoyer des rapports de scan par email."
+read -p "Voulez-vous installer le module mail ? (O/n) : " INSTALL_MAIL
+INSTALL_MAIL=${INSTALL_MAIL:-O}
+
+if [[ "$INSTALL_MAIL" =~ ^[Oo]$ ]] || [[ "$INSTALL_MAIL" == "oui" ]] || [[ "$INSTALL_MAIL" == "yes" ]]; then
+    echo "[INFO] Installation du module mail..."
+    
+    # Téléchargement du script d'installation mail
+    MAIL_INSTALL_SCRIPT="$(mktemp)"
+    wget -O "$MAIL_INSTALL_SCRIPT" "https://raw.githubusercontent.com/oxo140/StationBlanches/main/mailinstall.sh"
+    
+    if [ -f "$MAIL_INSTALL_SCRIPT" ] && [ -s "$MAIL_INSTALL_SCRIPT" ]; then
+        chmod +x "$MAIL_INSTALL_SCRIPT"
+        echo "[INFO] Lancement du script d'installation mail..."
+        "$MAIL_INSTALL_SCRIPT"
+        rm -f "$MAIL_INSTALL_SCRIPT"
+        echo "[INFO] Installation du module mail terminée."
+    else
+        echo "[WARN] Impossible de télécharger le script d'installation mail."
+        echo "[WARN] Installation continuée sans le module mail."
+    fi
+else
+    echo "[INFO] Module mail non installé."
+fi
+
 # === Crons ClamAV & shutdown ===
 echo "[INFO] Configuration de la mise à jour automatique de ClamAV (21:00) et arrêt (22:00)..."
 (crontab -l 2>/dev/null; echo "0 21 * * * sudo freshclam") | crontab -
