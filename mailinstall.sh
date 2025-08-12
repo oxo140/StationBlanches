@@ -46,21 +46,6 @@ chmod 600 ~/.msmtprc
 # Afficher un message pour l'utilisateur
 echo "L'installation et la configuration sont terminées."
 echo "Le script mail.py a été téléchargé et modifié avec vos informations."
-echo "Vous pouvez maintenant utiliser le script Python pour tester l'envoi des emails."
-echo "python3 mail.py"
 
-
-echo "✅ Installation terminée."
-read -p "Voulez-vous redémarrer maintenant pour finaliser l'installation ? (o/N) " reponse
-
-# Normaliser en minuscule
-reponse=$(echo "$reponse" | tr '[:upper:]' '[:lower:]')
-
-if [[ "$reponse" == "o" || "$reponse" == "oui" ]]; then
-    echo "🔄 Redémarrage en cours..."
-    sudo reboot
-else
-    echo "⏳ Redémarrage annulé. Pensez à redémarrer plus tard pour completer l'installation."
-fi
 
 
