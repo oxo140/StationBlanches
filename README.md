@@ -1,12 +1,15 @@
 # 🛡️ Stations Blanches
 
-Ce projet est conçu pour des Stations Blanches, permettant de scanner les périphériques USB afin de garantir qu'ils sont exempts de logiciels malveillants. Il repose sur l'antivirus **ClamAV** et inclut des visuels intuitifs pour informer l'utilisateur de l'état du scan.
+Ce projet est conçu pour des Stations Blanches, permettant de scanner les périphériques USB afin de garantir qu'ils sont exempts de logiciels malveillants. 
 
 ## 📋 Prérequis
 
-- **Debian 11.8** (ou version supérieure recommandée)
-- **Environnement Xfce** obligatoire
+- **Debian 11.8** 
+- **Environnement Gnome** 
 - Connexion Internet pour téléchargement et mise a jour de la base de hash.
+- **Désactivez la mise en veille** de votre ordinateur pour assurer un fonctionnement continu.
+- **Activez l'ouverture automatique de session** afin que les services se lancent correctement au démarrage.
+- **Il est préférable de configurer le démarrage automatique de votre machine via le BIOS pour garantir son allumage sans intervention manuelle.**
 
 
 ---
@@ -28,7 +31,7 @@ sudo ./installation.sh
 
 Pour vérifier le bon fonctionnement de la station blanche :
 
-1. Dans XFCE, vérifier dans Paramètres → Disques et périphériques amovibles que “Monter les médias amovible” est coché.
+1. vérifier dans Paramètres → Énergie que les paramètres sont sur aucune mise en veille.
 2. Lancer un terminal et lancé le script avec la commande python
 ```bash
 python3 script.py gui
@@ -45,7 +48,7 @@ Format : un hash SHA-256 par ligne (64 caractères hexadécimaux).
 
 Utilisé comme liste noire : si un fichier USB a un hash qui correspond → infection.
 
-
+Dautre base seront ajouté plus tard
 
 ## 🖼️ Images
 
@@ -65,30 +68,8 @@ Le projet utilise des visuels pour indiquer l'état du scan USB. Ces images sont
 
 ## 🔄 Extinction automatique
 
-- Extinction automatique du système à **22h00** pour éviter un fonctionnement prolongé inutile (modifiable via `crontab`).
+- Extinction automatique du système à **22h00** pour éviter un fonctionnement prolongé inutile la nuit (modifiable via `crontab`).
 
----
-
-## 🛠️ Instructions supplémentaires
-
-- **Désactivez la mise en veille** de votre ordinateur pour assurer un fonctionnement continu.
-- **Activez l'ouverture automatique de session** afin que les services se lancent correctement au démarrage.
-Pour que la station se lance sans intervention :
-
-sudo nano /etc/lightdm/lightdm.conf
-
-Sous [Seat:*],  :
-
-autologin-user=USER
-
-autologin-user-timeout=0
-
-Puis redémarrer
-
-- ⚠️ **Il est préférable de configurer le démarrage automatique de votre machine via le BIOS pour garantir son allumage sans intervention manuelle.**
-
-
----
 
 ## 📊 Fichiers de Statistiques et Logs
 
