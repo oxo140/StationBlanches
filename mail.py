@@ -43,7 +43,7 @@ for filename in files_to_attach:
 # Configuration du serveur SMTP
 server = smtplib.SMTP('smtp.gmail.com', 587)
 server.starttls()  # Sécuriser la connexion
-app_password = os.environ.get("MAIL_APP_PASSWORD")
+app_password = os.environ.get("MAIL_APP_PASSWORD", "").strip()
 if not app_password:
     raise RuntimeError("Variable d'environnement MAIL_APP_PASSWORD manquante")
 
