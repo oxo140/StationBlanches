@@ -42,7 +42,7 @@ for filename in files_to_attach:
 # Configuration du serveur SMTP
 server = smtplib.SMTP('smtp.gmail.com', 587)
 server.starttls()  # Sécuriser la connexion
-server.login(from_email, 'Mot de passe d'application')
+server.login(from_email, "Mot de passe d'application")
 text = msg.as_string()
 
 # Envoi de l'e-mail
