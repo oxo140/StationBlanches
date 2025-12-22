@@ -1,3 +1,4 @@
+import os
 import smtplib
 import socket
 from email.mime.multipart import MIMEMultipart
@@ -42,7 +43,11 @@ for filename in files_to_attach:
 # Configuration du serveur SMTP
 server = smtplib.SMTP('smtp.gmail.com', 587)
 server.starttls()  # Sécuriser la connexion
-server.login(from_email, 'Mot de passe d'application')
+app_password = os.environ.get("MAIL_APP_PASSWORD", "").strip()
+if not app_password:
+    raise RuntimeError("Variable d'environnement MAIL_APP_PASSWORD manquante")
+
+server.login(from_email, app_password)
 text = msg.as_string()
 
 # Envoi de l'e-mail
