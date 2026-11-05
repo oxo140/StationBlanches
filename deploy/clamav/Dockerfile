@@ -1,6 +1,6 @@
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      clamav-daemon clamav-freshclam clamav ca-certificates netcat-openbsd \
+      clamav-daemon clamav-freshclam clamav clamdscan ca-certificates netcat-openbsd \
     && rm -rf /var/lib/apt/lists/* \
     && install -d -o clamav -g clamav -m 0755 /var/lib/clamav /run/clamav
 COPY deploy/clamav/clamd.conf /etc/clamav/clamd.conf

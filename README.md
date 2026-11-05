@@ -28,7 +28,17 @@ Ne pas installer cette station sur le disque USB destiné aux analyses : les rè
 
 ## Installer
 
-Depuis un compte administrateur disposant de sudo, dans un terminal du bureau :
+**Installation en une ligne**, depuis un terminal Debian avec sudo :
+
+```bash
+(set -e; sudo apt-get update; sudo apt-get install -y ca-certificates curl; sb_install=$(mktemp); trap 'rm -f -- "$sb_install"' EXIT; curl -fsSL https://raw.githubusercontent.com/oxo140/StationBlanches/codex/v2-rust-docker/deploy/bootstrap.sh -o "$sb_install"; sudo bash "$sb_install")
+```
+
+Cette commande télécharge l'installateur depuis **la branche de refonte** puis l'exécute ; elle fonctionne avant la fusion dans `main`. Les sources sont installées dans `/opt/station-blanche`. Le script vérifie Debian 13 amd64, inventorie les dépendances et demande l'adresse IP avec une proposition automatique.
+
+L'assistant pose des questions **oui/non** pour installer les dépendances manquantes, Docker et ses plugins, puis choisir Xfce si aucun bureau reconnu n'est présent, Chromium, son démarrage automatique, SSH, les outils de vérification des KPI, le démarrage des conteneurs et les tests antivirus. Refuser un prérequis obligatoire arrête l'installation ; refuser une option conserve la configuration existante. Le mot de passe HTTPS existant est conservé. Rust et ClamAV sont installés dans les images Docker, sans chaîne Rust à installer sur Debian.
+
+**Alternative : installation depuis un clone**, pour consulter les scripts avant exécution :
 
 ```bash
 sudo apt update
@@ -42,6 +52,14 @@ sudo bash installation.sh 192.168.1.50 "$USER"
 
 Remplacer l'adresse par celle de la VM. Le script vérifie Debian 13 et amd64, installe Docker via son dépôt officiel si absent, prépare systemd/udev et construit les images. Il demande un mot de passe administrateur de 16 caractères minimum et en conserve seulement le hash bcrypt. Les fichiers privés sont dans `secrets/`, exclus de Git.
 
+Diagnostic des dépendances, **sans installer ni modifier quoi que ce soit** :
+
+```bash
+cd /opt/station-blanche && sudo bash installation.sh --check
+```
+
+Le diagnostic vérifie les paquets et commandes hôte, Docker CLI, Compose, Buildx, l'accès au démon et la configuration lorsqu'elle existe. Code de sortie `0` : dépendances requises disponibles ; `1` : élément manquant ou Docker inaccessible. Les composants optionnels sont signalés séparément. Si Docker Debian `docker.io` existe déjà, les plugins manquants sont installés depuis Debian ; aucune migration ou suppression automatique d'un moteur existant n'est faite.
+
 Le script n'effectue pas de mise à niveau générale de Debian et n'ajoute pas d'extinction automatique. Une réinstallation conserve les données et le mot de passe existant.
 
 Retirer puis réinsérer les clés déjà montées par le bureau avant l'installation. La première récupération des signatures peut prendre plusieurs minutes ; l'application reste bloquée tant que le moteur n'est pas prêt.
@@ -49,6 +67,42 @@ Retirer puis réinsérer les clés déjà montées par le bureau avant l'install
 - Écran local : `http://127.0.0.1:8080/?kiosk=1`, lecture seule, accessible uniquement depuis la station.
 - Supervision distante : `https://192.168.1.50`, utilisateur `admin`, mot de passe choisi à l'installation.
 - Chromium se lance à la connexion au bureau si l'utilisateur a été fourni au script. L'ouverture automatique de session et la désactivation de veille restent des choix à configurer dans Debian.
+
+## Tester : fichier sain et détection antivirus
+
+Le test utilise le [fichier standard EICAR](https://www.eicar.org/download-anti-malware-testfile/), **pas un vrai virus**. Son contenu est généré localement et vérifié (68 octets, SHA-256), sans téléchargement d'échantillon malveillant.
+
+### Test automatique du moteur installé
+
+```bash
+cd /opt/station-blanche && sudo bash deploy/test-antivirus.sh --engine --wait 900
+```
+
+Le script attend le moteur et des signatures vérifiées, puis exige un code `0` pour un document sain et un code `1` avec une signature EICAR pour le fichier de test. Une panne du moteur ou l'absence de détection fait échouer le script. Ces deux scans directs **ne modifient pas l'historique USB, les KPI ou la quarantaine**.
+
+### Test complet avec une clé USB
+
+Sur un poste de préparation Linux (ou avant d'activer les montages en lecture seule), créer les fichiers :
+
+```bash
+bash deploy/test-antivirus.sh --fixtures /tmp
+```
+
+Le script affiche un nouveau répertoire contenant `clean/document-sain.txt` et `infected/eicar.com.txt`, sans écraser de fichier existant. Copier **seulement `clean/`** sur une clé de test vide, puis retirer la clé du poste de préparation. Sur la station, retirer la clé avant de lancer le script suivant et l'insérer quand le script le demande :
+
+```bash
+cd /opt/station-blanche && bash deploy/test-antivirus.sh --verify-usb clean sdb1 300
+```
+
+Remplacer `sdb1` par la partition reçue dans la VM, visible avec `lsblk`. Le test exige une **nouvelle** analyse de cette partition, au moins un fichier analysé, zéro détection, zéro erreur et une hausse du compteur d'analyses.
+
+Ensuite, ajouter `infected/eicar.com.txt` sur la clé depuis le poste de préparation, la retirer et lancer sur la station :
+
+```bash
+cd /opt/station-blanche && bash deploy/test-antivirus.sh --verify-usb infected sdb1 300
+```
+
+Insérer la clé après le message. Le script vérifie le verdict infecté, l'absence d'erreur, l'enregistrement d'une copie EICAR avec le bon SHA-256 et l'augmentation des KPI d'analyse, détection et quarantaine. `jq` est nécessaire et proposé par l'installateur. Les analyses de test restent dans l'historique ; le script n'efface aucun résultat ni fichier sur la clé. La copie isolée n'enlève pas l'original EICAR de la clé.
 
 ## Faire confiance au certificat HTTPS
 

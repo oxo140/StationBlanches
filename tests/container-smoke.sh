@@ -26,6 +26,20 @@ for attempt in {1..30}; do
     sleep 1
 done
 
+# Test du client réellement inclus dans l'image, avec une base EICAR locale de recette.
+fixture_dir=$(mktemp -d)
+bash "$root/deploy/test-antivirus.sh" --fixtures "$fixture_dir"
+clean_file=$(find "$fixture_dir" -name document-sain.txt -type f)
+eicar_file=$(find "$fixture_dir" -name eicar.com.txt -type f)
+docker exec -i "$prefix-clamav" clamdscan --config-file=/etc/clamav/clamd.conf --stream --no-summary - < "$clean_file"
+if docker exec -i "$prefix-clamav" clamdscan --config-file=/etc/clamav/clamd.conf --stream --no-summary - < "$eicar_file"; then
+    echo 'EICAR non détecté' >&2; exit 1
+else
+    [[ $? == 1 ]]
+fi
+rm -f "$clean_file" "$eicar_file"
+rmdir "$(dirname "$clean_file")" "$(dirname "$eicar_file")" "$(dirname "$(dirname "$clean_file")")" "$fixture_dir"
+
 # Les répertoires des volumes doivent être utilisables sans root, même avec un rootfs readonly.
 docker run -d --name "$prefix-app" --read-only --cap-drop ALL --security-opt no-new-privileges:true \
     -e SB_CLAMD=127.0.0.1:3310 -p 127.0.0.1:18080:8080 \
