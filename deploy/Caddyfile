@@ -5,7 +5,18 @@
     auto_https disable_redirects
 }
 http://:8080 {
-    reverse_proxy app:8080
+    @old_kiosk {
+        path /
+        query kiosk=1
+    }
+    redir @old_kiosk /kiosk 307
+    @kiosk path /kiosk /kiosk.js /kiosk.css /state.js /api/live /health/live /health/ready
+    handle @kiosk {
+        reverse_proxy app:8080
+    }
+    handle {
+        redir https://{$STATION_IP}{uri} 307
+    }
 }
 https://{$STATION_IP} {
     tls internal

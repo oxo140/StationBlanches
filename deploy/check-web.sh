@@ -8,7 +8,7 @@ deadline=$((SECONDS+limit))
 echo 'Vérification de la page locale http://127.0.0.1:8080/…'
 while (( SECONDS<deadline )); do
     if curl --noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 4 http://127.0.0.1:8080/health/live >/dev/null 2>&1; then
-        if curl --noproxy '*' --fail --silent --show-error --max-time 4 http://127.0.0.1:8080/ >/dev/null; then
+        if curl --noproxy '*' --fail --silent --show-error --max-time 4 http://127.0.0.1:8080/kiosk >/dev/null; then
             echo '[OK] Page web accessible depuis la machine hôte. Le moteur antivirus peut encore initialiser ses signatures.'
             exit 0
         fi

@@ -31,11 +31,15 @@ for attempt in {1..60}; do
     [[ "$attempt" != 60 ]] || exit 1
     sleep 1
 done
-curl --noproxy '*' -fsS -D "$temp_dir/headers" http://127.0.0.1:8080/ | grep -q 'Station Blanche'
+curl --noproxy '*' -fsS -D "$temp_dir/headers" http://127.0.0.1:8080/kiosk | grep -q 'Station Blanche'
 grep -qi '^content-security-policy:' "$temp_dir/headers"
 [[ $(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health/ready) == 503 ]]
 curl --noproxy '*' -fsS http://127.0.0.1:8080/kiosk | grep -q 'CONTRÔLE DES SUPPORTS USB'
 curl --noproxy '*' -fsS http://127.0.0.1:8080/api/live | jq -e 'has("progress") and has("pending")'
+for path in / /api/status /api/scans/1/findings /app.js; do
+    [[ $(curl --noproxy '*' -sS -D "$temp_dir/headers" -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080$path") == 307 ]]
+    grep -Fqi "location: https://$STATION_IP$path" "$temp_dir/headers"
+done
 app_id=$(compose ps -q app)
 web_id=$(compose ps -q web)
 # La publication du kiosque appartient au proxy, pas au réseau interne de l'application.
