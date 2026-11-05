@@ -52,7 +52,7 @@ install -d -m 0700 "$state_root"
 state=$(mktemp -d "$state_root/backup.XXXXXXXX")
 unit="station-blanche-network-rollback-$(date +%s)-$RANDOM"
 rollback="$state/rollback.sh"
-printf '#!/bin/bash\nset -u\nsystemctl stop %q.timer 2>/dev/null || true\nifdown --force %q || true\n' "$unit" "$interface" > "$rollback"
+printf '#!/bin/bash\nset -u\ntouch %q\nsystemctl stop %q.timer 2>/dev/null || true\ntimeout 30 ifdown --force %q || true\n' "$state/rolled-back" "$unit" "$interface" > "$rollback"
 index=0
 for file in "$config" "$hook_up" "$hook_dhcp" /etc/dhcpcd.enter-hook; do
     [[ ! -L "$file" ]] || { echo "Lien symbolique non pris en charge : $file" >&2; exit 1; }
@@ -87,7 +87,7 @@ restore_on_error() {
 trap restore_on_error ERR
 
 # Arrêter le DHCP avec l'ancien profil, avant de changer sa méthode : aucun ancien client ne doit rester actif en mode statique.
-ifdown --force "$interface"
+timeout 30 ifdown --force "$interface"
 temporary=$(mktemp "$(dirname "$config")/.station-blanche.XXXXXXXX")
 cp --preserve=all -- "$config" "$temporary"
 sb_render_interfaces "$config" "$interface" "$mode" "$address" "$gateway" "$dns" > "$temporary"
@@ -138,7 +138,7 @@ if timeout 45 ifup --force "$interface" && sb_network_check && sb_ask 'Conserver
     if (( SECONDS >= deadline )) || ! systemctl is-active --quiet "$unit.timer"; then restore_on_error; fi
     systemctl stop "$unit.timer"
     # Le timer doit encore être en attente : ne pas valider si une restauration a déjà démarré.
-    if [[ $(systemctl show -p ExecMainStartTimestampMonotonic --value "$unit.service") != 0 ]]; then restore_on_error; fi
+    if [[ -e "$state/rolled-back" ]]; then restore_on_error; fi
     trap - ERR
     echo '[OK] Configuration ifupdown et DNS persistants conservés.'
     exit 0
