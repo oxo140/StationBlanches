@@ -25,8 +25,11 @@ check 'Docker CLI' docker --version
 check 'Docker Compose v2' docker compose version
 check 'Docker Buildx' docker buildx version
 check 'Démon Docker accessible' docker info --format '{{.ServerVersion}}'
-if command -v chromium >/dev/null; then echo '[OPTIONNEL OK] Chromium'; else echo '[OPTIONNEL ABSENT] Chromium (kiosque)'; fi
-if command -v jq >/dev/null; then echo '[OPTIONNEL OK] jq'; else echo '[OPTIONNEL ABSENT] jq (vérification USB automatisée)'; fi
+check 'Paquet Chromium' sb_installed chromium
+check 'Chromium utilisable' chromium --version
+check 'Outils de test et KPI (jq)' jq --version
+check 'Paquet serveur SSH' sb_installed openssh-server
+check 'Binaire serveur SSH' test -x /usr/sbin/sshd
 if command -v xfce4-session >/dev/null; then echo '[OPTIONNEL OK] Xfce'; else echo '[OPTIONNEL ABSENT] Xfce (un autre bureau convient aussi)'; fi
 if [[ -f .env && -s secrets/admin.caddy ]]; then
     check 'Configuration Docker Compose' docker compose config --quiet

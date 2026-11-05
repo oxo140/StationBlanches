@@ -86,7 +86,7 @@ Diagnostic des dépendances, **sans installer ni modifier quoi que ce soit** :
 cd /opt/station-blanche && sudo bash installation.sh --check
 ```
 
-Le diagnostic vérifie les paquets et commandes hôte, Docker CLI, Compose, Buildx, l'accès au démon et la configuration lorsqu'elle existe. Code de sortie `0` : dépendances requises disponibles ; `1` : élément manquant ou Docker inaccessible. Les composants optionnels sont signalés séparément. Si Docker Debian `docker.io` existe déjà, les plugins manquants sont installés depuis Debian ; aucune migration ou suppression automatique d'un moteur existant n'est faite.
+Le diagnostic vérifie les paquets et commandes hôte, Chromium, SSH, jq, Docker CLI, Compose, Buildx, l'accès au démon et la configuration lorsqu'elle existe. Code de sortie `0` : dépendances requises disponibles ; `1` : élément manquant, réseau indisponible ou Docker inaccessible. Xfce reste optionnel si un autre bureau compatible est déjà installé. Si Docker Debian `docker.io` existe déjà, les plugins manquants sont installés depuis Debian ; aucune migration ou suppression automatique d'un moteur existant n'est faite.
 
 Le script n'effectue pas de mise à niveau générale de Debian et n'ajoute pas d'extinction automatique. Une réinstallation conserve les données et le mot de passe existant.
 
