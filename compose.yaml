@@ -20,8 +20,6 @@ services:
       SB_QUARANTINE: /quarantine
       SB_UPDATE_STATUS: /signatures/update-status
       RUST_LOG: station_blanche=info
-    ports:
-      - "127.0.0.1:8080:8080"
     volumes:
       - history:/data
       - quarantine:/quarantine
@@ -79,6 +77,7 @@ services:
     environment:
       STATION_IP: ${STATION_IP:?Définir STATION_IP dans .env}
     ports:
+      - "127.0.0.1:8080:8080"
       - "${STATION_IP}:443:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro

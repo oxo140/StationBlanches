@@ -155,6 +155,7 @@ fi
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
+bash deploy/check-web.sh 60
 bash deploy/check-dependencies.sh
 echo "Attente des signatures et tests automatiques sain / EICAR (jusqu'à 15 minutes au premier démarrage)."
 bash deploy/test-antivirus.sh --engine --wait 900

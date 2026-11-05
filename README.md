@@ -150,6 +150,17 @@ Sous Windows, importer ce certificat dans les autorités de certification racine
 
 Seul le port HTTPS 443 est publié sur l'IP choisie. Le HTTP local reste lié à `127.0.0.1` ; le port ClamAV 3310 n'est pas publié. Le réseau Docker du moteur est isolé de celui de la supervision. Ne pas rediriger le port 443 depuis Internet. Les postes locaux de la station ont accès à la supervision sans authentification via loopback : la session du kiosque doit rester réservée à cet usage.
 
+Le port local 8080 est publié par **Caddy**, qui transmet la requête à l'application sur le réseau interne. L'application Rust ne publie pas directement de port depuis ses réseaux internes. L'installation et la mise à jour vérifient la page depuis l'hôte avec `deploy/check-web.sh` ; ce contrôle ne dépend pas de la fin du téléchargement des signatures.
+
+Si le navigateur affiche « connexion échouée » :
+
+```bash
+cd /opt/station-blanche
+sudo docker compose ps -a
+sudo docker compose logs --tail=80 app web clamav
+sudo bash deploy/check-web.sh 10
+```
+
 ## Mettre à jour l'application
 
 À effectuer entre deux analyses, après un instantané ou une sauvegarde :

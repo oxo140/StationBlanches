@@ -11,8 +11,9 @@ Rust / app ── INSTREAM, réseau scan interne ── ClamAV
     │                                             │
     │ SQLite + copies privées                     └─ FreshClam → Internet (6 h)
     │                                                signatures persistantes
-    ├─ 127.0.0.1:8080 → Chromium kiosque
-    └─ réseau frontend interne → Caddy → HTTPS IP:443 + bcrypt
+    └─ réseau frontend interne → Caddy
+                                  ├─ 127.0.0.1:8080 → Chromium kiosque
+                                  └─ HTTPS IP:443 + bcrypt
 ```
 
 Le montage est la seule petite intégration privilégiée sur l'hôte. L'interface du bureau est un navigateur local ; aucun accès X11/Wayland n'est accordé aux conteneurs. Toute la logique applicative s'exécute dans Docker.

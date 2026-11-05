@@ -32,3 +32,4 @@ jobs:
       - run: docker build -t station-blanche/app:test .
       - run: docker build -f deploy/clamav/Dockerfile -t station-blanche/clamav:test .
       - run: bash tests/container-smoke.sh
+      - run: bash tests/compose-web-checks.sh
