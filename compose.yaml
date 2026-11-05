@@ -57,6 +57,7 @@ services:
     stop_grace_period: 30s
     volumes:
       - signatures:/var/lib/clamav
+      - scan_temp:/scan-tmp
     tmpfs:
       - /tmp:size=256m,mode=1777
       - /run/clamav:size=8m,mode=1777
@@ -98,6 +99,7 @@ networks:
   updates: {}
   ingress: {}
 volumes:
+  scan_temp: {}
   history: {}
   quarantine: {}
   signatures: {}

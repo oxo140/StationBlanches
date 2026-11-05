@@ -22,7 +22,7 @@ Le README propose une commande d'installation en une ligne. Le bootstrap réutil
 1. Clé FAT/exFAT avec fichier ordinaire et fichier caché : tous les fichiers comptés, aucune menace détectée.
 2. Clé contenant un fichier de test antivirus EICAR obtenu depuis sa source officielle : détection, SHA-256 enregistré, copie privée en quarantaine, original conservé. Ne pas utiliser de malware réel pour la recette.
 3. Archive contenant le fichier de test : détection à l'intérieur de l'archive, copie du conteneur analysé en quarantaine.
-4. Fichier de plus de 100 Mio : analyse incomplète, aucune indication favorable.
+4. Fichier de plus de 1 Gio : analyse incomplète, aucune indication favorable. Vérifier également qu'un fichier sain de plus de 100 Mio et de moins de 1 Gio ne déclenche plus la limite précédente.
 5. Clé ext4 avec fichier illisible pour UID 10001 et lien symbolique : erreurs détaillées et résultat incomplet.
 6. Retirer la clé pendant la lecture, y compris au dernier fichier et lors de la copie : résultat incomplet ou infecté avec erreurs, jamais favorable.
 7. Insérer deux clés et une clé avec plusieurs partitions : chaque partition analysée une fois. Retirer puis réinsérer : nouvelle analyse.

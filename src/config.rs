@@ -36,7 +36,7 @@ impl Config {
                 .unwrap_or_else(|_| "/signatures/update-status".into())
                 .into(),
             clamd: env::var("SB_CLAMD").unwrap_or_else(|_| "clamav:3310".into()),
-            max_file_bytes: number("SB_MAX_FILE_BYTES", "104857600")?,
+            max_file_bytes: number("SB_MAX_FILE_BYTES", "1073741824")?,
             max_update_age: number("SB_MAX_UPDATE_AGE_SECONDS", "86400")?.try_into()?,
         };
         ensure!(
@@ -46,8 +46,8 @@ impl Config {
             "Les chemins applicatifs doivent être absolus"
         );
         ensure!(
-            config.max_file_bytes > 0 && config.max_file_bytes <= 104857600,
-            "La limite de fichier doit être comprise entre 1 et 104857600 octets"
+            config.max_file_bytes > 0 && config.max_file_bytes <= 1073741824,
+            "La limite de fichier doit être comprise entre 1 et 1073741824 octets"
         );
         ensure!(
             (3600..=86400).contains(&config.max_update_age),

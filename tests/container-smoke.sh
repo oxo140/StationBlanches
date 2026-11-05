@@ -18,6 +18,7 @@ trap cleanup EXIT
 # Démarrage réel de la configuration de production, avec une petite base de test sans malware.
 docker run -d --name "$prefix-clamav" --read-only --cap-drop ALL \
     --security-opt no-new-privileges:true --tmpfs /tmp:mode=1777 --tmpfs /run/clamav:mode=1777 \
+    --tmpfs /scan-tmp:mode=1777,size=1536m \
     --mount "type=bind,src=$root/tests/fixtures,dst=/var/lib/clamav,readonly" \
     --entrypoint clamd station-blanche/clamav:test --config-file=/etc/clamav/clamd.conf
 for attempt in {1..30}; do
@@ -32,6 +33,11 @@ bash "$root/deploy/test-antivirus.sh" --fixtures "$fixture_dir"
 clean_file=$(find "$fixture_dir" -name document-sain.txt -type f)
 eicar_file=$(find "$fixture_dir" -name eicar.com.txt -type f)
 docker exec -i "$prefix-clamav" clamdscan --config-file=/etc/clamav/clamd.conf --stream --no-summary - < "$clean_file"
+# Régression de l'ancienne limite à 100 Mio : le flux sain doit être accepté.
+large_file="$fixture_dir/large-clean.bin"
+truncate -s 120M "$large_file"
+docker exec -i "$prefix-clamav" clamdscan --config-file=/etc/clamav/clamd.conf --stream --no-summary - < "$large_file"
+rm -f "$large_file"
 if docker exec -i "$prefix-clamav" clamdscan --config-file=/etc/clamav/clamd.conf --stream --no-summary - < "$eicar_file"; then
     echo 'EICAR non détecté' >&2; exit 1
 else

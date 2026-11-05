@@ -17,9 +17,9 @@ Foreground yes
 DatabaseDirectory $root/tests/fixtures
 TCPSocket 13310
 TCPAddr 127.0.0.1
-StreamMaxLength 110M
-MaxFileSize 100M
-MaxScanSize 256M
+StreamMaxLength 1024M
+MaxFileSize 1024M
+MaxScanSize 2048M
 AlertExceedsMax yes
 AlertEncrypted yes
 ScanArchive yes

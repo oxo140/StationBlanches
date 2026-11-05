@@ -165,6 +165,7 @@ impl Client {
             }
         }
         let mut stream = connect_address(self.address)?;
+        stream.set_read_timeout(Some(Duration::from_secs(660)))?;
         stream.write_all(b"zINSTREAM\0")?;
         let buffer = &mut self.buffer;
         let mut hash = Sha256::new();
@@ -174,7 +175,7 @@ impl Client {
         progress(0)?;
         loop {
             ensure!(
-                started.elapsed() < Duration::from_secs(120),
+                started.elapsed() < Duration::from_secs(900),
                 "Durée maximale d'analyse dépassée"
             );
             let count = file.read(buffer)?;
