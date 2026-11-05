@@ -1,7 +1,7 @@
 name: Validate v2
 on:
   push:
-    branches: [main, codex/v2-rust-docker]
+    branches: [main]
   pull_request:
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
-      - run: bash -n installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh
+      - run: for script in installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh tests/*.sh; do bash -n "$script"; done
       - run: sudo apt-get update && sudo apt-get install -y shellcheck clamav-daemon netcat-openbsd jq
       - run: shellcheck installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh tests/*.sh
       - run: bash tests/installer-checks.sh

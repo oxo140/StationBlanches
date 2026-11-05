@@ -147,6 +147,7 @@ bash deploy/check-dependencies.sh
 if sb_ask 'Construire et démarrer les conteneurs maintenant ?'; then
     docker compose up -d --build
     docker compose ps
+    bash deploy/check-dependencies.sh
     echo 'La première récupération des signatures peut prendre plusieurs minutes.'
     if sb_ask 'Attendre le moteur puis lancer les tests sain / EICAR ?' N; then
         bash deploy/test-antivirus.sh --engine --wait 900
