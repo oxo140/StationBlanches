@@ -13,6 +13,7 @@ $("fullscreen").addEventListener("click", () => {
 $("close-details").addEventListener("click", () => {$("findings").hidden = true;});
 async function api(path) {
   const response = await fetch(path, {cache:"no-store", signal:AbortSignal.timeout(8000)});
+  if(response.redirected && new URL(response.url).pathname==="/login") {location.assign("/login");throw new Error("Session expirée");}
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -66,6 +67,16 @@ function chart(scans) {
 function renderLive(data) {
   const view=data ? stationView(data) : offlineView();
   text("station-title",view.title);
+  $("live-progress").hidden=view.kind!=="scanning";
+  if(view.phase==="counting" || !view.total_files){
+    $("live-bar").removeAttribute("value");
+    text("live-label",`${number(view.total_files)} fichiers trouvés · Comptage en cours`);
+  }else{
+    const percent=Math.min(100,Math.floor(100*(view.processed_files||0)/view.total_files));
+    $("live-bar").value=percent;
+    text("live-label",`${number(view.processed_files)} / ${number(view.total_files)} fichiers traités · ${percent} %`);
+  }
+  text("live-speed",view.phase==="counting" ? "Inventaire des répertoires sans lecture du contenu des fichiers" : `${number(((view.read_bytes_per_second||0)/1048576).toFixed(1))} Mio/s · Débit moyen effectif · La progression dépend du nombre de fichiers, pas de leur taille`);
   text("station-detail",view.kind==="scanning" ? `${number(view.files)} fichiers analysés · ${number(view.threats)} menace(s) · ${number(view.quarantined)} copie(s) en quarantaine. ${view.message}` : view.message);
   document.querySelector(".status-panel").classList.toggle("blocked",!["ready","clean","scanning"].includes(view.kind) || view.errors>0 || view.threats>0);
   text("engine-pill",data?.engine?.ready ? "Moteur opérationnel" : "Protection indisponible");

@@ -13,9 +13,10 @@ Le README propose une commande d'installation en une ligne. Le bootstrap réutil
 1. Installer sur une VM Debian 13.7 amd64 avec bureau, 4 vCPU et 8 Go RAM, USB transmis.
 2. Lancer l'installateur ; vérifier les trois services avec `docker compose ps`.
 3. Vérifier que l'écran indique un blocage jusqu'à la disponibilité des signatures, puis que `/health/ready` retourne 200.
-4. Depuis un autre poste : HTTP 8080 et ClamAV 3310 inaccessibles. HTTPS 443 requiert un identifiant. Un mauvais mot de passe doit retourner 401.
-5. Installer le certificat public Caddy ; vérifier l'empreinte et l'absence d'erreur TLS sur l'IP.
+4. Depuis un autre poste : HTTP 8080 et ClamAV 3310 inaccessibles. HTTPS 443 redirige vers `/login` sans fenêtre Basic Auth. Un mauvais mot de passe affiche une erreur ; vérifier l'espacement des tentatives, puis connexion avec `admin`, accès API et révocation immédiate par Déconnexion. L'accès local direct à l'historique doit également rediriger vers la connexion HTTPS.
+5. Vérifier que l'installation/mise à jour approuve le certificat public Caddy sur Debian et pour Chromium. Après redémarrage du navigateur, l'IP HTTPS ne doit plus afficher d'erreur TLS. Sur un autre poste, importer séparément le certificat public après vérification de l'empreinte.
 6. Redémarrer la VM : propagation des montages disponible, services actifs, kiosque lancé après connexion au bureau.
+7. Fermer Chromium : vérifier sa réouverture après cinq secondes et l'absence d'une deuxième instance si le lanceur est exécuté deux fois.
 
 ## Supports et verdicts
 
@@ -28,6 +29,7 @@ Le README propose une commande d'installation en une ligne. Le bootstrap réutil
 7. Insérer deux clés et une clé avec plusieurs partitions : chaque partition analysée une fois. Retirer puis réinsérer : nouvelle analyse.
 8. Brancher une nouvelle clé pendant le scan d'une autre : aucune cible ne reçoit le verdict de l'autre.
 9. Recréer le conteneur en cours de scan : historique précédent marqué interrompu, supports présents réanalysés.
+10. Vérifier le comptage préalable, puis la progression sur les fichiers traités / total et le débit moyen effectif. Une copie en quarantaine ou une vérification finale ne doit jamais devenir un verdict favorable avant la fin. Tester une clé avec de nombreux petits fichiers et une avec un gros fichier : le pourcentage n'est pas une estimation du temps restant.
 
 ## Signatures, pannes et persistance
 

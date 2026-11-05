@@ -3,7 +3,7 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 temp_dir=$(mktemp -d)
 # shellcheck disable=SC2329
-cleanup() { rm -f "$temp_dir/curl" "$temp_dir/count"; rmdir "$temp_dir"; }
+cleanup() { rm -f "$temp_dir/curl" "$temp_dir/docker" "$temp_dir/count"; rmdir "$temp_dir"; }
 trap cleanup EXIT
 cat > "$temp_dir/curl" <<'EOF'
 #!/bin/bash
@@ -35,6 +35,15 @@ case "$*" in
 esac
 EOF
 chmod 0755 "$temp_dir/curl"
+cat > "$temp_dir/docker" <<'EOF'
+#!/bin/bash
+set -Eeuo pipefail
+if [[ "$*" == info ]]; then exit 0; fi
+if [[ "$*" == 'compose exec -T app curl '* ]]; then shift 4; exec "$@"; fi
+echo "Commande Docker inattendue : $*" >&2
+exit 1
+EOF
+chmod 0755 "$temp_dir/docker"
 for scenario in clean infected incomplete missing-copy; do
     rm -f "$temp_dir/count"
     expected=infected

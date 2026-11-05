@@ -16,7 +16,7 @@ export SB_TEST_LAUNCHES="$temp_dir/launches"
 export XDG_CONFIG_HOME="$temp_dir/config"
 export PATH="$temp_dir/bin:$PATH"
 status=0
-timeout --signal=TERM 5 bash deploy/host/kiosk-launch.sh || status=$?
+timeout --signal=TERM 7 bash deploy/host/kiosk-launch.sh || status=$?
 [[ "$status" == 124 ]]
 [[ $(wc -l < "$SB_TEST_LAUNCHES") -ge 2 ]]
 grep -q -- '--kiosk' "$SB_TEST_LAUNCHES"

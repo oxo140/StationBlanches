@@ -4,6 +4,10 @@ services:
     image: station-blanche/app:test
     volumes:
       - type: bind
+        source: ${SB_COMPOSE_TEST_HASH:?}
+        target: /run/secrets/admin.hash
+        read_only: true
+      - type: bind
         source: ${SB_COMPOSE_TEST_MEDIA:?}
         target: /media
         read_only: true

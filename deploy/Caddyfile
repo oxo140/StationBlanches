@@ -20,12 +20,24 @@ http://:8080 {
 }
 https://{$STATION_IP} {
     tls internal
-    import /etc/caddy/admin.caddy
     header {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
         -Server
     }
-    reverse_proxy app:8080
+    @public path /login /login.css /login.js /auth/login /auth/logout
+    handle @public {
+        reverse_proxy app:8080
+    }
+    handle {
+        forward_auth app:8080 {
+            uri /auth/check
+            @unauthorized status 401
+            handle_response @unauthorized {
+                redir * /login 303
+            }
+        }
+        reverse_proxy app:8080
+    }
 }

@@ -8,6 +8,7 @@ export STATION_IP
 STATION_IP=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1);exit}}')
 export SB_COMPOSE_TEST_MEDIA="$temp_dir/media"
 export SB_COMPOSE_TEST_AUTH="$temp_dir/admin.caddy"
+export SB_COMPOSE_TEST_HASH="$temp_dir/admin.hash"
 compose() { docker compose -p "$project" -f compose.yaml -f tests/compose-web.yaml "$@"; }
 # Appelée par trap ; ce projet et ses volumes sont dédiés à ce test.
 # shellcheck disable=SC2329
@@ -15,7 +16,7 @@ cleanup() {
     compose logs --tail=50 app web || true
     compose down --volumes --remove-orphans || true
     if mountpoint -q "$temp_dir/media"; then sudo umount "$temp_dir/media"; fi
-    rm -f "$temp_dir/admin.caddy" "$temp_dir/ca.crt" "$temp_dir/headers"
+    rm -f "$temp_dir/admin.caddy" "$temp_dir/admin.hash" "$temp_dir/cookies" "$temp_dir/ca.crt" "$temp_dir/headers"
     rmdir "$temp_dir/media" "$temp_dir"
 }
 trap cleanup EXIT
@@ -24,6 +25,8 @@ sudo mount --bind "$temp_dir/media" "$temp_dir/media"
 sudo mount --make-rshared "$temp_dir/media"
 hash=$(printf '%s' 'temporary-ci-password-not-deployed' | docker run --rm -i caddy:2 caddy hash-password)
 printf 'basic_auth {\n    admin %s\n}\n' "$hash" > "$temp_dir/admin.caddy"
+printf '%s\n' "$hash" > "$temp_dir/admin.hash"
+chmod 0444 "$temp_dir/admin.hash"
 compose config --quiet
 compose up -d --no-build
 for attempt in {1..60}; do
@@ -52,6 +55,14 @@ for attempt in {1..30}; do
     [[ "$attempt" != 30 ]] || exit 1
     sleep 1
 done
-[[ "$status" == 401 ]]
-curl --noproxy '*' --cacert "$temp_dir/ca.crt" --user admin:temporary-ci-password-not-deployed -fsS "https://$STATION_IP/" | grep -q 'Station Blanche'
+[[ "$status" == 303 ]]
+https() { curl --noproxy '*' --cacert "$temp_dir/ca.crt" -sS "$@"; }
+https -f "https://$STATION_IP/login" | grep -q 'Mot de passe administrateur'
+[[ $(https -o /dev/null -w '%{http_code}' -X POST --data 'username=admin&password=wrong' "https://$STATION_IP/auth/login") == 403 ]]
+https -D "$temp_dir/headers" -o /dev/null -c "$temp_dir/cookies" -H "Origin: https://$STATION_IP" --data 'username=admin&password=temporary-ci-password-not-deployed' "https://$STATION_IP/auth/login"
+grep -qi '^set-cookie: __Host-sb_session=.*Secure; HttpOnly; SameSite=Strict' "$temp_dir/headers"
+https -f -b "$temp_dir/cookies" "https://$STATION_IP/" | grep -q 'Supervision'
+https -f -b "$temp_dir/cookies" "https://$STATION_IP/api/status" | jq -e 'has("kpis")'
+https -f -b "$temp_dir/cookies" -H "Origin: https://$STATION_IP" -X POST "https://$STATION_IP/auth/logout" >/dev/null
+[[ $(https -b "$temp_dir/cookies" -o /dev/null -w '%{http_code}' "https://$STATION_IP/") == 303 ]]
 echo 'Production Compose local kiosk and authenticated HTTPS checks passed'

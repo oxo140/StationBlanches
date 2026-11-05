@@ -88,9 +88,13 @@ case "$mode" in
         seconds "$wait_seconds" || fail 'Délai invalide (1 à 3600 secondes).'
         need curl
         need jq
+        need docker
+        docker info >/dev/null || fail 'Docker inaccessible. Lancer avec sudo sur la station.'
         api=http://127.0.0.1:8080
-        curl -fsS --max-time 10 "$api/health/ready" >/dev/null || fail 'Station non prête.'
-        before=$(curl -fsS --max-time 10 "$api/api/status")
+        # Recette privilégiée via le conteneur : ne pas rouvrir l'historique au kiosque.
+        api_get() { docker compose exec -T app curl -fsS --max-time 10 "$api$1"; }
+        api_get /health/ready >/dev/null || fail 'Station non prête.'
+        before=$(api_get /api/status)
         known=$(jq -c '[.scans[].id]' <<< "$before")
         jq -e '.progress.scan_id == null' <<< "$before" >/dev/null || fail 'Une analyse est déjà en cours. Attendre son terme.'
         if jq -e --arg device "$device" '.present_results[] | select(.device == $device)' <<< "$before" >/dev/null; then
@@ -99,10 +103,10 @@ case "$mode" in
         echo "Insérez maintenant la clé de test (partition $device). Attente maximale : $wait_seconds s."
         deadline=$((SECONDS + wait_seconds))
         while (( SECONDS < deadline )); do
-            current=$(curl -fsS --max-time 10 "$api/api/status") || fail 'Connexion à la station perdue.'
+            current=$(api_get /api/status) || fail 'Connexion à la station perdue.'
             result=$(jq -c --arg device "$device" --argjson known "$known" '[.scans[] | select(.device == $device and .finished_at != null) | select(.id as $id | ($known | index($id)) == null)][0] // empty' <<< "$current")
             if [[ -n "$result" ]]; then
-                current=$(curl -fsS --max-time 10 "$api/api/status") || fail 'Lecture des KPI impossible.'
+                current=$(api_get /api/status) || fail 'Lecture des KPI impossible.'
                 jq . <<< "$result"
                 jq -e '.errors == 0' <<< "$result" >/dev/null || fail 'Analyse avec erreurs.'
                 scan_id=$(jq -r '.id' <<< "$result")
@@ -110,7 +114,7 @@ case "$mode" in
                     jq -e '.verdict == "no_threat_detected" and .threats == 0 and .files > 0' <<< "$result" >/dev/null || fail 'Verdict sain attendu sur une clé contenant le document de test.'
                 else
                     jq -e '.verdict == "infected" and .threats > 0' <<< "$result" >/dev/null || fail 'Détection attendue.'
-                    findings=$(curl -fsS --max-time 10 "$api/api/scans/$scan_id/findings")
+                    findings=$(api_get "/api/scans/$scan_id/findings")
                     jq -e --arg hash "$eicar_sha256" '[.[] | select(.kind == "threat" and .quarantine_id != null and .sha256 == $hash and (.detail | ascii_downcase | contains("eicar")))] | length > 0' <<< "$findings" >/dev/null || fail 'Copie EICAR vérifiée absente du rapport.'
                 fi
                 analyses_before=$(jq '.kpis.analyses' <<< "$before")

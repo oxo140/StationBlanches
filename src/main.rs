@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod db;
 mod engine;
@@ -11,7 +12,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
-    routing::get,
+    routing::{get, post},
 };
 use config::Config;
 use model::{EngineStatus, Progress};
@@ -161,6 +162,11 @@ async fn main() -> Result<()> {
         )
         .init();
     let config = Config::from_env()?;
+    let auth_routes = Router::new()
+        .route("/auth/login", post(auth::login))
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/check", get(auth::check))
+        .with_state(auth::Auth::new()?);
     if let Some(parent) = config.database.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -191,6 +197,10 @@ async fn main() -> Result<()> {
     let worker = tokio::task::spawn_blocking(move || worker(worker_app, worker_stop));
     let routes=Router::new()
         .route("/",get(index))
+        .route("/login",get(||async {Html(include_str!("../web/login.html"))}))
+        .route("/login.css",get(||async {([(header::CONTENT_TYPE,"text/css; charset=utf-8")],include_str!("../web/login.css"))}))
+        .route("/login.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/login.js"))}))
+        .merge(auth_routes)
         .route("/kiosk",get(||async {Html(include_str!("../web/kiosk.html"))}))
         .route("/kiosk.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/kiosk.js"))}))
         .route("/state.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/state.js"))}))
@@ -204,7 +214,7 @@ async fn main() -> Result<()> {
         .route("/health/ready",get(ready))
         .layer(axum::middleware::map_response(|mut response:axum::response::Response|async move {
             let headers=response.headers_mut();
-            headers.insert("content-security-policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'".parse().unwrap());
+            headers.insert("content-security-policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap());
             headers.insert("x-content-type-options","nosniff".parse().unwrap());
             headers.insert("referrer-policy","no-referrer".parse().unwrap());
             headers.insert(header::CACHE_CONTROL,"no-store".parse().unwrap());

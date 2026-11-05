@@ -11,12 +11,23 @@ function render(view) {
   $("counters").hidden=!["scanning","clean","infected","incomplete"].includes(view.kind);
   for (const key of ["files","threats","quarantined"]) $(key).textContent=number(view[key]);
   $("current-file").textContent=view.file || "";
+  $("scan-progress").hidden=view.kind!=="scanning";
+  if(view.phase==="counting" || !view.total_files){
+    $("progress-bar").removeAttribute("value");
+    $("progress-label").textContent=view.phase==="counting" ? `${number(view.total_files)} fichiers trouvés…` : "Préparation de l’analyse…";
+    $("progress-percent").textContent="";
+  }else{
+    const percent=Math.min(100,Math.floor(100*(view.processed_files||0)/view.total_files));
+    $("progress-bar").value=percent;
+    $("progress-label").textContent=`${number(view.processed_files)} / ${number(view.total_files)} fichiers traités`;
+    $("progress-percent").textContent=`${percent} %`;
+  }
   $("errors").hidden=!view.errors;
   $("errors").textContent=`${number(view.errors)} erreur(s) : consultez le rapport dans la supervision.`;
 }
 function elapsed() {
   const seconds=state.started_at ? Math.max(0,Math.floor(Date.now()/1000-state.started_at)) : 0;
-  $("transfer").textContent=state.kind==="scanning" ? `${number((state.bytes/1048576).toFixed(1))} Mo lus · ${Math.floor(seconds/60)} min ${seconds%60} s` : "";
+  $("transfer").textContent=state.kind==="scanning" && state.phase!=="counting" ? `${number(((state.read_bytes||0)/1048576).toFixed(1))} Mio lus · ${number(((state.read_bytes_per_second||0)/1048576).toFixed(1))} Mio/s (débit moyen effectif) · ${Math.floor(seconds/60)} min ${seconds%60} s` : "";
 }
 async function refresh() {
   try {

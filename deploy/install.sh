@@ -154,14 +154,16 @@ if [[ ! -s secrets/admin.caddy ]]; then
 else
     echo '[OK] Mot de passe HTTPS existant conservé.'
 fi
+bash deploy/prepare-auth.sh
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 bash deploy/check-web.sh 60
+bash deploy/trust-ca.sh "$desktop_user"
 bash deploy/check-dependencies.sh
 echo "Attente des signatures et tests automatiques sain / EICAR (jusqu'à 15 minutes au premier démarrage)."
 bash deploy/test-antivirus.sh --engine --wait 900
 echo "Installation terminée : $project"
 echo 'Interface locale : http://127.0.0.1:8080/kiosk'
-echo "Administration : https://$station_ip (admin). Installer le certificat local : voir README.md."
+echo "Administration : https://$station_ip (admin). Certificat approuvé sur cette station ; voir README.md pour les autres postes."
 echo 'Retirer puis réinsérer les clés déjà montées par le bureau avant installation.'

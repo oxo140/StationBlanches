@@ -19,10 +19,10 @@ while true; do
     until curl --noproxy '*' -fsS --connect-timeout 2 --max-time 3 http://127.0.0.1:8080/health/live >/dev/null 2>&1; do
         sleep 2
     done
-    chromium --user-data-dir="$profile" --kiosk --no-first-run --noerrdialogs --disable-session-crashed-bubble http://127.0.0.1:8080/kiosk 9>&- &
+    chromium --user-data-dir="$profile" --kiosk --no-first-run --noerrdialogs --disable-background-mode --disable-session-crashed-bubble http://127.0.0.1:8080/kiosk 9>&- &
     browser_pid=$!
     wait "$browser_pid" || true
     browser_pid=''
     # Une fermeture volontaire comme un plantage relance le kiosque.
-    sleep 2
+    sleep 5
 done

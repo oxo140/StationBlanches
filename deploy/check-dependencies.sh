@@ -26,6 +26,8 @@ check 'Docker Compose v2' docker compose version
 check 'Docker Buildx' docker buildx version
 check 'Démon Docker accessible' docker info --format '{{.ServerVersion}}'
 check 'Paquet Chromium' sb_installed chromium
+check 'Gestion de confiance Chromium (NSS)' sb_installed libnss3-tools
+check 'Hachage de connexion disponible' test -s secrets/admin.hash
 check 'Chromium utilisable' chromium --version
 check 'Outils de test et KPI (jq)' jq --version
 check 'Paquet serveur SSH' sb_installed openssh-server

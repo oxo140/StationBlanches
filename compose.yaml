@@ -14,6 +14,8 @@ services:
     stop_grace_period: 3m
     environment:
       SB_LISTEN: 0.0.0.0:8080
+      SB_ADMIN_HASH_FILE: /run/secrets/admin.hash
+      SB_ORIGIN: https://${STATION_IP}
       SB_CLAMD: clamav:3310
       SB_MEDIA: /media
       SB_DATABASE: /data/history.db
@@ -21,6 +23,7 @@ services:
       SB_UPDATE_STATUS: /signatures/update-status
       RUST_LOG: station_blanche=info
     volumes:
+      - ./secrets/admin.hash:/run/secrets/admin.hash:ro
       - history:/data
       - quarantine:/quarantine
       - signatures:/signatures:ro

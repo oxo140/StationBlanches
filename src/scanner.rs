@@ -37,6 +37,17 @@ fn checkpoint(db: &rusqlite::Connection, scan: &Scan, last: &mut Instant) -> Res
     Ok(())
 }
 
+fn inventory(path: &Path, mut update: impl FnMut(u64) -> Result<()>) -> Result<u64> {
+    let mut total = 0;
+    for entry in WalkDir::new(path).follow_links(false).max_open(16) {
+        if !entry.as_ref().is_ok_and(|entry| entry.file_type().is_dir()) {
+            total += 1;
+        }
+        update(total)?;
+    }
+    Ok(total)
+}
+
 #[cfg(target_os = "linux")]
 pub fn open_beneath(root: &File, relative: &Path) -> Result<File> {
     use std::{
@@ -150,7 +161,7 @@ pub fn run(
         scan_id: Some(scan.id.clone()),
         device: scan.device.clone(),
         started_at: scan.started_at,
-        phase: "scanning".into(),
+        phase: "counting".into(),
         ..Default::default()
     };
     let mut published = Instant::now();
@@ -180,6 +191,21 @@ pub fn run(
         guard.check(true)?;
         let mut client = engine::Client::new(config)?;
         let root = File::open(&mount.path)?;
+        // Ne lit que les répertoires : aucun contenu de fichier ni hachage préalable.
+        inventory(&mount.path, |total| {
+            ensure!(
+                !stop.load(Ordering::Relaxed),
+                "Analyse arrêtée pour maintenance"
+            );
+            guard.check(false)?;
+            live.total_files = total;
+            publish(progress, &live, &mut published, false);
+            Ok(())
+        })?;
+        guard.check(true)?;
+        live.phase = "scanning".into();
+        publish(progress, &live, &mut published, true);
+        let read_started = Instant::now();
         for entry in WalkDir::new(&mount.path).follow_links(false).max_open(16) {
             ensure!(
                 !stop.load(Ordering::Relaxed),
@@ -189,6 +215,7 @@ pub fn run(
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(error) => {
+                    live.processed_files += 1;
                     scan.errors += 1;
                     record("", "error", error.to_string(), None, None)?;
                     live.errors = scan.errors;
@@ -204,6 +231,7 @@ pub fn run(
             let display = relative.to_string_lossy();
             live.current_file = display.to_string();
             live.phase = "scanning".into();
+            let read_before = live.read_bytes;
             let file_result = (|| -> Result<()> {
                 ensure!(
                     entry.file_type().is_file(),
@@ -217,6 +245,9 @@ pub fn run(
                     );
                     guard.check(false)?;
                     live.bytes = scan.bytes + bytes;
+                    live.read_bytes = read_before + bytes;
+                    live.read_bytes_per_second =
+                        live.read_bytes as f64 / read_started.elapsed().as_secs_f64().max(0.001);
                     publish(progress, &live, &mut published, false);
                     checkpoint(&db, &scan, &mut saved)?;
                     Ok(())
@@ -253,6 +284,7 @@ pub fn run(
                 scan.errors += 1;
                 record(&display, "error", format!("{error:#}"), None, None)?;
             }
+            live.processed_files += 1;
             live.files = scan.files;
             live.bytes = scan.bytes;
             live.threats = scan.threats;
@@ -261,6 +293,10 @@ pub fn run(
             publish(progress, &live, &mut published, false);
             checkpoint(&db, &scan, &mut saved)?;
         }
+        ensure!(
+            live.processed_files == live.total_files,
+            "Le contenu du support a changé pendant l'analyse"
+        );
         live.phase = "finalizing".into();
         publish(progress, &live, &mut published, true);
         guard.check(true)?;
@@ -285,6 +321,17 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inventory_counts_nested_hidden_files_and_can_be_cancelled() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        fs::create_dir(temp.path().join("nested"))?;
+        fs::create_dir(temp.path().join("empty"))?;
+        fs::write(temp.path().join(".hidden"), b"hidden")?;
+        fs::write(temp.path().join("nested/file"), b"content")?;
+        assert_eq!(inventory(temp.path(), |_| Ok(()))?, 2);
+        assert!(inventory(temp.path(), |_| anyhow::bail!("cancelled")).is_err());
+        Ok(())
+    }
     #[test]
     fn quarantine_preserves_source_and_rejects_bad_copies() -> Result<()> {
         let temp = tempfile::tempdir()?;

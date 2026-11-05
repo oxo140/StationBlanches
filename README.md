@@ -21,14 +21,14 @@ Refonte pour **Debian 13 (Trixie), dont 13.7, amd64**, avec bureau graphique et 
 Le petit écran local se trouve sur **`http://127.0.0.1:8080/kiosk`**. Il est distinct du tableau de bord et affiche uniquement les étapes utiles :
 
 1. **Branchez votre clé USB**.
-2. **Analyse en cours**, avec fichiers analysés, fichier courant, volume lu et temps écoulé. Aucun deuxième parcours du support n'est effectué pour produire un pourcentage artificiel.
+2. **Comptage des fichiers**, puis **analyse en cours**, avec barre de progression calculée sur les fichiers traités / total, fichier courant, volume lu, débit moyen effectif en Mio/s et temps écoulé. Le comptage ne lit que les répertoires, sans lire le contenu des fichiers. Le pourcentage porte sur le nombre de fichiers, pas sur une estimation du temps restant ; 100 % des fichiers traités ne valide pas le support avant le contrôle final.
 3. **Analyse terminée / aucune menace détectée**, **menace détectée avec nombre de copies en quarantaine**, ou **analyse incomplète**.
 
 La copie de quarantaine est clairement distinguée d'une suppression : les originaux restent sur le support. Le résultat reste affiché tant que la partition est présente. Si d'autres partitions connues attendent leur tour, l'écran ne passe pas encore à un résultat favorable global. Une perte de connexion affiche un état inconnu.
 
-Le kiosque démarre avec Chromium en plein écran après connexion au bureau ; son lanceur attend le serveur HTTP avant d'ouvrir le navigateur. Si Chromium est fermé ou plante, il est relancé après deux secondes. Un profil dédié et un verrou évitent les instances concurrentes. Après une mise à jour du lanceur, déconnectez puis reconnectez la session du bureau pour activer cette surveillance. L'ancien lien `/?kiosk=1` redirige vers ce nouvel écran.
+Le kiosque démarre avec Chromium en plein écran après connexion au bureau ; son lanceur attend le serveur HTTP avant d'ouvrir le navigateur. Si Chromium est fermé ou plante, il est relancé après **cinq secondes**. Un profil dédié et un verrou évitent les instances concurrentes. Après une mise à jour du lanceur, déconnectez puis reconnectez la session du bureau pour activer cette surveillance. L'ancien lien `/?kiosk=1` redirige vers ce nouvel écran.
 
-Le bouton **Supervision** et l'adresse locale **`http://127.0.0.1:8080/`** redirigent vers l'accès HTTPS de la station. Le navigateur demande l'identifiant **`admin`** et le mot de passe administrateur configuré à l'installation, même sur la station elle-même. Il peut mémoriser cette authentification pendant la session. Seuls l'écran USB, son état courant et les sondes de santé restent accessibles sans connexion en local. La supervision conserve l'historique horodaté, le résultat, le nombre de fichiers, les détections, les erreurs et le nombre de copies en quarantaine par analyse. La migration ajoute ce compteur sans effacer les anciennes données.
+Le bouton **Supervision** et l'adresse locale **`http://127.0.0.1:8080/`** redirigent vers une **page de connexion dédiée** en HTTPS. Utiliser l'identifiant **`admin`** et le mot de passe administrateur configuré à l'installation, même sur la station elle-même. Le hachage bcrypt existant est conservé. La session dure au maximum huit heures, expire lors d'un redémarrage de l'application et peut être fermée par **Déconnexion**. Seuls l'écran USB, son état courant et les sondes de santé restent accessibles sans connexion en local. La supervision conserve l'historique horodaté, le résultat, le nombre de fichiers, les détections, les erreurs et le nombre de copies en quarantaine par analyse. La migration ajoute ce compteur sans effacer les anciennes données.
 
 Pour les supports lents : parcours en flux, contrôles des montages regroupés (avec vérification finale forcée), TCP sans délai Nagle, tampon réutilisé et conseil de lecture séquentielle au noyau. L'API légère `/api/live` ne lit pas SQLite ; l'historique et les KPI se rafraîchissent toutes les cinq secondes avec une connexion SQL en lecture seule. Les compteurs sont sauvegardés périodiquement et à la fin ; une analyse interrompue ne devient jamais favorable au redémarrage. Seuls les fichiers détectés sont relus pour effectuer et vérifier leur copie de quarantaine. Les gains réels dépendent du support et doivent être mesurés sur la VM.
 
@@ -135,7 +135,7 @@ bash deploy/test-antivirus.sh --fixtures /tmp
 Le script affiche un nouveau répertoire contenant `clean/document-sain.txt` et `infected/eicar.com.txt`, sans écraser de fichier existant. Copier **seulement `clean/`** sur une clé de test vide, puis retirer la clé du poste de préparation. Sur la station, retirer la clé avant de lancer le script suivant et l'insérer quand le script le demande :
 
 ```bash
-cd /opt/station-blanche && bash deploy/test-antivirus.sh --verify-usb clean sdb1 300
+cd /opt/station-blanche && sudo bash deploy/test-antivirus.sh --verify-usb clean sdb1 300
 ```
 
 Remplacer `sdb1` par la partition reçue dans la VM, visible avec `lsblk`. Le test exige une **nouvelle** analyse de cette partition, au moins un fichier analysé, zéro détection, zéro erreur et une hausse du compteur d'analyses.
@@ -143,7 +143,7 @@ Remplacer `sdb1` par la partition reçue dans la VM, visible avec `lsblk`. Le te
 Ensuite, ajouter `infected/eicar.com.txt` sur la clé depuis le poste de préparation, la retirer et lancer sur la station :
 
 ```bash
-cd /opt/station-blanche && bash deploy/test-antivirus.sh --verify-usb infected sdb1 300
+cd /opt/station-blanche && sudo bash deploy/test-antivirus.sh --verify-usb infected sdb1 300
 ```
 
 Insérer la clé après le message. Le script vérifie le verdict infecté, l'absence d'erreur, l'enregistrement d'une copie EICAR avec le bon SHA-256 et l'augmentation des KPI d'analyse, détection et quarantaine. `jq` est installé automatiquement. Les analyses de test restent dans l'historique ; le script n'efface aucun résultat ni fichier sur la clé. La copie isolée n'enlève pas l'original EICAR de la clé.
@@ -151,6 +151,8 @@ Insérer la clé après le message. Le script vérifie le verdict infecté, l'ab
 ## Faire confiance au certificat HTTPS
 
 L'accès par IP utilise l'autorité locale de Caddy. Il faut installer **uniquement son certificat public** sur les postes d'administration :
+
+L'installateur et `deploy/update.sh` le font automatiquement **sur la station Debian**, dans le magasin système et dans les deux emplacements NSS utilisés par Chromium. Redémarrer le navigateur après cette opération. Le message « Non sécurisé » doit alors disparaître pour l'adresse HTTPS configurée. Sur les autres postes, effectuer l'import ci-dessous ; la station ne peut pas modifier à distance leur magasin de confiance.
 
 ```bash
 sudo docker compose cp web:/data/caddy/pki/authorities/local/root.crt ./station-blanche-ca.crt

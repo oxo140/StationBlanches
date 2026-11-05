@@ -17,4 +17,8 @@ assert.match(stationView({...base,present_results:[infected]}).message,/originau
 const progress={scan_id:"active",files:22,bytes:4096,threats:1,errors:0,quarantined:0,phase:"quarantine",current_file:"archive.zip"};
 const view=stationView({...base,progress});
 assert.equal(view.kind,"scanning");assert.equal(view.files,22);assert.equal(view.file,"archive.zip");assert.match(view.title,/quarantaine/);
+const counting=stationView({...base,progress:{...progress,phase:"counting",total_files:43,processed_files:0}});
+assert.match(counting.title,/Comptage/);assert.equal(counting.total_files,43);assert.equal(counting.processed_files,0);
+const finalizing=stationView({...base,progress:{...progress,phase:"finalizing",total_files:43,processed_files:43}});
+assert.equal(finalizing.kind,"scanning");assert.match(finalizing.title,/Enregistrement/);
 console.log("Kiosk states, pending partitions, interrupted scans and quarantine reporting passed");
