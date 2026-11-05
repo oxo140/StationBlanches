@@ -36,6 +36,7 @@ for attempt in {1..60}; do
 done
 curl --noproxy '*' -fsS -D "$temp_dir/headers" http://127.0.0.1:8080/kiosk | grep -q 'Station Blanche'
 grep -qi '^content-security-policy:' "$temp_dir/headers"
+grep -qi '^referrer-policy: same-origin' "$temp_dir/headers"
 [[ $(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health/ready) == 503 ]]
 curl --noproxy '*' -fsS http://127.0.0.1:8080/kiosk | grep -q 'CONTRÔLE DES SUPPORTS USB'
 curl --noproxy '*' -fsS http://127.0.0.1:8080/api/live | jq -e 'has("progress") and has("pending")'

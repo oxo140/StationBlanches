@@ -216,7 +216,7 @@ async fn main() -> Result<()> {
             let headers=response.headers_mut();
             headers.insert("content-security-policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap());
             headers.insert("x-content-type-options","nosniff".parse().unwrap());
-            headers.insert("referrer-policy","no-referrer".parse().unwrap());
+            headers.insert("referrer-policy","same-origin".parse().unwrap());
             headers.insert(header::CACHE_CONTROL,"no-store".parse().unwrap());
             response
         }))

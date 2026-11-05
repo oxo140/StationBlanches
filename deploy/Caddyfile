@@ -23,7 +23,7 @@ https://{$STATION_IP} {
     header {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
-        Referrer-Policy "no-referrer"
+        Referrer-Policy "same-origin"
         -Server
     }
     @public path /login /login.css /login.js /auth/login /auth/logout

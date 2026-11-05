@@ -27,6 +27,7 @@ jobs:
       - run: bash tests/clamd-integration.sh
       - run: node --check web/app.js
       - run: node --check web/kiosk.js && node tests/ui-state.mjs
+      - run: node --check web/login.js && node tests/login-interface.mjs
   containers:
     runs-on: ubuntu-latest
     steps:
