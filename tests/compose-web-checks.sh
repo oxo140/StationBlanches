@@ -44,7 +44,7 @@ docker inspect "$app_id" | jq -e '.[0].HostConfig.PortBindings | . == null or le
 docker inspect "$app_id" | jq -e '.[0].NetworkSettings.Networks | length == 2'
 compose cp web:/data/caddy/pki/authorities/local/root.crt "$temp_dir/ca.crt"
 for attempt in {1..30}; do
-    if status=$(curl --noproxy '*' --cacert "$temp_dir/ca.crt" --connect-timeout 2 --max-time 4 -s -o /dev/null -w '%{http_code}' "https://$STATION_IP/"); then break; fi
+    if status=$(curl --noproxy '*' --cacert "$temp_dir/ca.crt" --connect-timeout 2 --max-time 4 -sS -o /dev/null -w '%{http_code}' "https://$STATION_IP/"); then break; fi
     [[ "$attempt" != 30 ]] || exit 1
     sleep 1
 done
