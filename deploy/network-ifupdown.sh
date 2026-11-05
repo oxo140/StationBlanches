@@ -28,6 +28,14 @@ for file in /etc/network/interfaces /etc/network/interfaces.d/*; do
 done
 [[ $matches == 1 ]] || { echo 'Profil ifupdown complexe ou introuvable : configurer cette interface dans Debian, puis relancer le diagnostic.' >&2; exit 1; }
 if grep -q '\\$' "$config"; then echo 'Profil avec continuation de ligne : modification automatique refusée.' >&2; exit 1; fi
+if awk -v iface="$interface" '
+    $1=="iface" {selected=($2==iface && $3=="inet")}
+    selected && $1~/^(pre-up|up|post-up|pre-down|down|post-down|bridge-|bond-|vlan-|wpa-)/ {bad=1}
+    END {exit !bad}
+' "$config"; then
+    echo 'Profil ifupdown avec hooks, Wi-Fi, pont ou agrégation : utiliser son gestionnaire existant. Aucune modification.' >&2
+    exit 1
+fi
 [[ $(stat -c %u "$config") == 0 ]] || { echo 'Le profil réseau doit appartenir à root.' >&2; exit 1; }
 if [[ -L /etc/resolv.conf ]] && ! command -v resolvconf >/dev/null && ! systemctl is-active --quiet systemd-resolved; then
     echo '/etc/resolv.conf est un lien géré par un résolveur non reconnu. Aucune modification ; utiliser son gestionnaire DNS.' >&2
@@ -78,10 +86,11 @@ restore_on_error() {
 }
 trap restore_on_error ERR
 
+# Arrêter le DHCP avec l'ancien profil, avant de changer sa méthode : aucun ancien client ne doit rester actif en mode statique.
+ifdown --force "$interface"
 temporary=$(mktemp "$(dirname "$config")/.station-blanche.XXXXXXXX")
+cp --preserve=all -- "$config" "$temporary"
 sb_render_interfaces "$config" "$interface" "$mode" "$address" "$gateway" "$dns" > "$temporary"
-chmod --reference="$config" "$temporary"
-chown --reference="$config" "$temporary"
 mv -f -- "$temporary" "$config"
 install -d -m 0755 /etc/network/if-up.d /etc/dhcp/dhclient-enter-hooks.d
 if [[ -n "$dns" ]]; then
@@ -125,7 +134,6 @@ if [[ -f /etc/dhcpcd.enter-hook ]]; then
 else
     install -m 0644 "$state/dhcpcd-new" /etc/dhcpcd.enter-hook
 fi
-ifdown --force "$interface" || true
 if timeout 45 ifup --force "$interface" && sb_network_check && sb_ask 'Conserver cette configuration (avant expiration du délai de 180 secondes) ?' N; then
     if (( SECONDS >= deadline )) || ! systemctl is-active --quiet "$unit.timer"; then restore_on_error; fi
     systemctl stop "$unit.timer"

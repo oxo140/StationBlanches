@@ -54,7 +54,7 @@ Configurer ou réparer le réseau indépendamment du reste de l'installation :
 cd /opt/station-blanche && sudo bash installation.sh --network
 ```
 
-La configuration automatique prend en charge un profil NetworkManager actif, ainsi que les configurations ifupdown simples dans `/etc/network/interfaces` et `/etc/network/interfaces.d/`. Les autres interfaces et les adresses IPv6 sont conservées. Les configurations personnalisées non reconnues sont laissées intactes et doivent être modifiées dans leur gestionnaire Debian.
+La configuration automatique prend en charge un profil NetworkManager actif (Ethernet ou Wi-Fi), ainsi que les configurations ifupdown filaires simples dans `/etc/network/interfaces` et `/etc/network/interfaces.d/`. Les autres interfaces et les adresses IPv6 sont conservées. Les profils ifupdown avec hooks personnalisés, Wi-Fi, ponts ou agrégations sont laissés intacts et doivent être modifiés dans leur gestionnaire Debian.
 
 Avec NetworkManager, un profil est cloné et un checkpoint permet le retour à l'ancien profil sans confirmation dans les 180 secondes ; saisir **Yes** pour conserver les changements après le diagnostic. Avec ifupdown, les fichiers sont sauvegardés sous `/var/lib/station-blanche-network/` et un timer de restauration protège la modification ; confirmer le résultat dans le délai. Les hooks DNS prennent en charge les renouvellements dhclient/dhcpcd. Ne pas remplacer manuellement un `/etc/resolv.conf` géré par un résolveur.
 

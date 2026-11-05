@@ -19,7 +19,7 @@ sb_dns4() {
 }
 
 sb_network_check() {
-    local domain code failed=0
+    local domain code failed=0 https_checked=0
     echo '=== Diagnostic réseau IPv4 ==='
     if command -v ip >/dev/null; then
         ip -br -4 address show
@@ -63,6 +63,7 @@ sb_network_check() {
     if ! command -v curl >/dev/null; then
         echo '[INFO] curl absent : contrôle HTTPS différé après installation du paquet.'
     else
+        https_checked=1
         for domain in https://download.docker.com/linux/debian/gpg https://deb.debian.org/debian/; do
             if curl -4 --fail --silent --show-error --location --head --connect-timeout 5 --max-time 12 "$domain" >/dev/null; then
                 echo "[OK HTTPS] $domain"
@@ -77,7 +78,11 @@ sb_network_check() {
         echo '[ARRÊT] Réseau non prêt : aucune tentative de téléchargement Docker ne sera poursuivie.' >&2
         return 1
     fi
-    echo '[OK] Connectivité IPv4, résolution DNS et contrôles HTTPS disponibles.'
+    if (( https_checked )); then
+        echo '[OK] Connectivité IPv4, résolution DNS et contrôles HTTPS disponibles.'
+    else
+        echo '[OK] Résolution DNS disponible ; contrôle HTTPS à refaire après installation de curl.'
+    fi
 }
 
 sb_curl_error() {

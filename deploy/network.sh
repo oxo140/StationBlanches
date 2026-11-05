@@ -16,7 +16,11 @@ fi
 [[ $EUID == 0 ]] || { echo 'Utilisation : sudo bash deploy/network.sh [--check]' >&2; exit 1; }
 sb_platform
 sb_require_tty
-command -v ip >/dev/null || { echo 'iproute2 absent. Configurer la connexion dans les paramètres réseau Debian avant installation.' >&2; exit 1; }
+if ! command -v ip >/dev/null; then
+    echo 'iproute2 absent : configuration IPv4 différée. Vérification DNS / HTTPS avant installation de cette dépendance.'
+    sb_network_check
+    exit $?
+fi
 
 while true; do
     interface=$(sb_default_interface)
