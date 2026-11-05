@@ -114,12 +114,14 @@ if ! command -v chromium >/dev/null; then
     DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y chromium
 fi
 chromium --version
+install -d -m 0755 /usr/local/lib/station-blanche
+install -m 0755 deploy/host/kiosk-launch.sh /usr/local/lib/station-blanche/kiosk-launch.sh
 install -d -o "$desktop_user" -g "$desktop_group" -m 0755 "$user_home/.config/autostart"
 cat > "$user_home/.config/autostart/station-blanche.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Station Blanche
-Exec=chromium --kiosk --no-first-run http://127.0.0.1:8080/?kiosk=1
+Exec=/usr/local/lib/station-blanche/kiosk-launch.sh
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
@@ -160,6 +162,6 @@ bash deploy/check-dependencies.sh
 echo "Attente des signatures et tests automatiques sain / EICAR (jusqu'à 15 minutes au premier démarrage)."
 bash deploy/test-antivirus.sh --engine --wait 900
 echo "Installation terminée : $project"
-echo 'Interface locale : http://127.0.0.1:8080/?kiosk=1'
+echo 'Interface locale : http://127.0.0.1:8080/kiosk'
 echo "Administration : https://$station_ip (admin). Installer le certificat local : voir README.md."
 echo 'Retirer puis réinsérer les clés déjà montées par le bureau avant installation.'

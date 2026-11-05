@@ -17,9 +17,25 @@ use std::{
         Arc, RwLock,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 use walkdir::WalkDir;
+
+fn publish(target: &Arc<RwLock<Progress>>, live: &Progress, last: &mut Instant, force: bool) {
+    if force || last.elapsed() >= Duration::from_millis(200) {
+        *target.write().unwrap() = live.clone();
+        *last = Instant::now();
+    }
+}
+
+fn checkpoint(db: &rusqlite::Connection, scan: &Scan, last: &mut Instant) -> Result<()> {
+    if last.elapsed() >= Duration::from_secs(1) {
+        db::finish(db, scan)?;
+        *last = Instant::now();
+    }
+    Ok(())
+}
 
 #[cfg(target_os = "linux")]
 pub fn open_beneath(root: &File, relative: &Path) -> Result<File> {
@@ -127,13 +143,20 @@ pub fn run(
         threats: 0,
         errors: 0,
         engine: engine_version.into(),
+        quarantined: 0,
     };
     db::start(&db, &scan)?;
-    *progress.write().unwrap() = Progress {
+    let mut live = Progress {
         scan_id: Some(scan.id.clone()),
         device: scan.device.clone(),
+        started_at: scan.started_at,
+        phase: "scanning".into(),
         ..Default::default()
     };
+    let mut published = Instant::now();
+    let mut saved = Instant::now();
+    publish(progress, &live, &mut published, true);
+    let record_scan_id = scan.id.clone();
     let record = |path: &str,
                   kind: &str,
                   detail: String,
@@ -143,7 +166,7 @@ pub fn run(
         db::finding(
             &db,
             &Finding {
-                scan_id: scan.id.clone(),
+                scan_id: record_scan_id.clone(),
                 path: path.into(),
                 kind: kind.into(),
                 detail,
@@ -153,25 +176,24 @@ pub fn run(
         )
     };
     let result = (|| -> Result<()> {
-        ensure!(
-            mounts::still_present(mount, &config.media),
-            "Périphérique retiré ou remplacé avant le scan"
-        );
+        let mut guard = mounts::Guard::new(mount, &config.media);
+        guard.check(true)?;
+        let mut client = engine::Client::new(config)?;
         let root = File::open(&mount.path)?;
         for entry in WalkDir::new(&mount.path).follow_links(false).max_open(16) {
             ensure!(
                 !stop.load(Ordering::Relaxed),
                 "Analyse arrêtée pour maintenance"
             );
-            ensure!(
-                mounts::still_present(mount, &config.media),
-                "Périphérique retiré ou remplacé pendant le scan"
-            );
+            guard.check(false)?;
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(error) => {
                     scan.errors += 1;
                     record("", "error", error.to_string(), None, None)?;
+                    live.errors = scan.errors;
+                    publish(progress, &live, &mut published, true);
+                    checkpoint(&db, &scan, &mut saved)?;
                     continue;
                 }
             };
@@ -180,23 +202,37 @@ pub fn run(
             }
             let relative = entry.path().strip_prefix(&mount.path)?;
             let display = relative.to_string_lossy();
+            live.current_file = display.to_string();
+            live.phase = "scanning".into();
             let file_result = (|| -> Result<()> {
                 ensure!(
                     entry.file_type().is_file(),
                     "Lien symbolique ou fichier spécial : analyse incomplète"
                 );
                 let mut file = open_beneath(&root, relative)?;
-                let result = engine::scan(config, &mut file)?;
-                ensure!(
-                    mounts::still_present(mount, &config.media),
-                    "Périphérique retiré ou remplacé pendant la lecture"
-                );
+                let result = client.scan(&mut file, |bytes| {
+                    ensure!(
+                        !stop.load(Ordering::Relaxed),
+                        "Analyse arrêtée pour maintenance"
+                    );
+                    guard.check(false)?;
+                    live.bytes = scan.bytes + bytes;
+                    publish(progress, &live, &mut published, false);
+                    checkpoint(&db, &scan, &mut saved)?;
+                    Ok(())
+                })?;
+                guard.check(false)?;
                 scan.files += 1;
                 scan.bytes += result.bytes;
                 if let Detection::Threat(signature) = result.detection {
                     scan.threats += 1;
+                    live.files = scan.files;
+                    live.threats = scan.threats;
+                    live.phase = "quarantine".into();
+                    publish(progress, &live, &mut published, true);
                     match quarantine(&config.quarantine, &mut file, &result.sha256) {
                         Ok(id) => {
+                            scan.quarantined += 1;
                             record(&display, "threat", signature, Some(id), Some(result.sha256))?
                         }
                         Err(error) => {
@@ -217,19 +253,17 @@ pub fn run(
                 scan.errors += 1;
                 record(&display, "error", format!("{error:#}"), None, None)?;
             }
-            *progress.write().unwrap() = Progress {
-                scan_id: Some(scan.id.clone()),
-                device: scan.device.clone(),
-                files: scan.files,
-                bytes: scan.bytes,
-                threats: scan.threats,
-                errors: scan.errors,
-            };
+            live.files = scan.files;
+            live.bytes = scan.bytes;
+            live.threats = scan.threats;
+            live.errors = scan.errors;
+            live.quarantined = scan.quarantined;
+            publish(progress, &live, &mut published, false);
+            checkpoint(&db, &scan, &mut saved)?;
         }
-        ensure!(
-            mounts::still_present(mount, &config.media),
-            "Périphérique retiré ou remplacé en fin de scan"
-        );
+        live.phase = "finalizing".into();
+        publish(progress, &live, &mut published, true);
+        guard.check(true)?;
         ensure!(
             engine::health(config).ready,
             "Moteur ou signatures indisponibles en fin de scan"
@@ -244,7 +278,6 @@ pub fn run(
     scan.finished_at = Some(model::now());
     db::finish(&db, &scan)?;
     tracing::info!(id=%scan.id,verdict=%scan.verdict,files=scan.files,threats=scan.threats,errors=scan.errors,"Analyse terminée");
-    *progress.write().unwrap() = Progress::default();
     Ok(scan)
 }
 

@@ -8,13 +8,29 @@ Refonte pour **Debian 13 (Trixie), dont 13.7, amd64**, avec bureau graphique et 
 
 - Détection des partitions USB par udev/systemd sur l'hôte et montage **lecture seule, nodev, nosuid, noexec** dans `/srv/station-blanche/media`.
 - Propagation des montages vers Docker : pas de conteneur privilégié, pas d'accès à `/dev`, pas de socket Docker dans l'application.
-- Client de scan Rust : lecture en blocs de 64 Kio, SHA-256 calculé pendant cette lecture, envoi INSTREAM à ClamAV. La base reste chargée en mémoire dans `clamd`.
+- Client de scan Rust : tampon de 256 Kio réutilisé sur toute l'analyse, SHA-256 calculé pendant la lecture, envoi INSTREAM à ClamAV. La base reste chargée en mémoire dans `clamd` ; son adresse est résolue une seule fois par analyse. Les fichiers sains ne sont pas relus pour calculer leur hash.
 - Parcours des fichiers en flux, fichiers cachés inclus, sans suivre les liens. Les ouvertures Linux utilisent `openat2` pour rester dans le support analysé.
 - Les partitions sont traitées en file d'attente, une à la fois. Une réinsertion produit une nouvelle analyse. Après recréation de l'application, les supports présents sont réanalysés.
 - Recherche de nouvelles signatures toutes les **6 heures**, nouvelle tentative après **1 heure** en cas d'échec. La dernière vérification réussie doit dater de moins de **24 heures** et la version doit être chargée par ClamAV.
 - Verdicts distincts : **aucune menace détectée**, **menace détectée**, **analyse incomplète**, **interrompue**. Fichier illisible, erreur, lien, fichier spécial, limite dépassée ou déconnexion ne donnent jamais un verdict favorable.
 - Copie des fichiers détectés dans une quarantaine privée, nom aléatoire, droits `0600`, vérification SHA-256. **L'original n'est pas supprimé de la clé** : celle-ci reste potentiellement dangereuse. Aucune restauration ou ouverture des échantillons depuis le navigateur.
 - Historique SQLite et indicateurs persistants : analyses, fichiers, volumes lus, détections, partitions infectées, copies en quarantaine, analyses incomplètes et durée moyenne. Les compteurs concernent les **partitions**, pas nécessairement des clés physiques distinctes.
+
+## Écran local et supervision web
+
+Le petit écran local se trouve sur **`http://127.0.0.1:8080/kiosk`**. Il est distinct du tableau de bord et affiche uniquement les étapes utiles :
+
+1. **Branchez votre clé USB**.
+2. **Analyse en cours**, avec fichiers analysés, fichier courant, volume lu et temps écoulé. Aucun deuxième parcours du support n'est effectué pour produire un pourcentage artificiel.
+3. **Analyse terminée / aucune menace détectée**, **menace détectée avec nombre de copies en quarantaine**, ou **analyse incomplète**.
+
+La copie de quarantaine est clairement distinguée d'une suppression : les originaux restent sur le support. Le résultat reste affiché tant que la partition est présente. Si d'autres partitions connues attendent leur tour, l'écran ne passe pas encore à un résultat favorable global. Une perte de connexion affiche un état inconnu.
+
+Le kiosque démarre avec Chromium en plein écran après connexion au bureau ; son lanceur attend le serveur HTTP avant d'ouvrir le navigateur. L'ancien lien `/?kiosk=1` redirige vers ce nouvel écran.
+
+La supervision complète reste disponible sur **`http://127.0.0.1:8080/`** localement, et en HTTPS authentifié depuis le réseau. Elle conserve l'historique horodaté, le résultat, le nombre de fichiers, les détections, les erreurs et le nombre de copies en quarantaine par analyse. La migration ajoute ce compteur sans effacer les anciennes données.
+
+Pour les supports lents : parcours en flux, contrôles des montages regroupés (avec vérification finale forcée), TCP sans délai Nagle, tampon réutilisé et conseil de lecture séquentielle au noyau. L'API légère `/api/live` ne lit pas SQLite ; l'historique et les KPI se rafraîchissent toutes les cinq secondes avec une connexion SQL en lecture seule. Les compteurs sont sauvegardés périodiquement et à la fin ; une analyse interrompue ne devient jamais favorable au redémarrage. Seuls les fichiers détectés sont relus pour effectuer et vérifier leur copie de quarantaine. Les gains réels dépendent du support et doivent être mesurés sur la VM.
 
 ClamAV examine également les archives dans ses limites configurées. Le SHA-256 sert ici à l'intégrité et à la traçabilité, pas de moteur antivirus unique. Aucun produit ne garantit l'absence de toute menace.
 
@@ -92,7 +108,7 @@ Le script n'effectue pas de mise à niveau générale de Debian et n'ajoute pas 
 
 Retirer puis réinsérer les clés déjà montées par le bureau avant l'installation. La première récupération des signatures peut prendre plusieurs minutes ; l'application reste bloquée tant que le moteur n'est pas prêt.
 
-- Écran local : `http://127.0.0.1:8080/?kiosk=1`, lecture seule, accessible uniquement depuis la station.
+- Écran local : `http://127.0.0.1:8080/kiosk`, lecture seule, accessible uniquement depuis la station.
 - Supervision distante : `https://192.168.1.50`, utilisateur `admin`, mot de passe choisi à l'installation.
 - Chromium se lance à la connexion du compte bureau détecté. L'ouverture automatique de session et la désactivation de veille restent des choix à configurer dans Debian.
 

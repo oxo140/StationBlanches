@@ -24,6 +24,10 @@ pub struct Progress {
     pub bytes: u64,
     pub threats: u64,
     pub errors: u64,
+    pub quarantined: u64,
+    pub started_at: i64,
+    pub current_file: String,
+    pub phase: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,6 +42,7 @@ pub struct Scan {
     pub threats: u64,
     pub errors: u64,
     pub engine: String,
+    pub quarantined: u64,
 }
 
 #[derive(Debug, Serialize)]

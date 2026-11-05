@@ -25,6 +25,7 @@ jobs:
       - run: bash tests/usb-verifier-checks.sh
       - run: bash tests/clamd-integration.sh
       - run: node --check web/app.js
+      - run: node --check web/kiosk.js && node tests/ui-state.mjs
   containers:
     runs-on: ubuntu-latest
     steps:

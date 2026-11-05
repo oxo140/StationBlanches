@@ -1,6 +1,6 @@
 use crate::model::{Finding, Kpis, Scan};
 use anyhow::Result;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OpenFlags, params};
 use std::{path::Path, time::Duration};
 
 pub fn open(path: &Path) -> Result<Connection> {
@@ -20,6 +20,24 @@ pub fn open(path: &Path) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS findings_scan ON findings(scan_id);
         CREATE INDEX IF NOT EXISTS scans_time ON scans(started_at);",
     )?;
+    let has_quarantine: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('scans') WHERE name='quarantined')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_quarantine {
+        db.execute_batch("BEGIN IMMEDIATE;
+            ALTER TABLE scans ADD COLUMN quarantined INTEGER NOT NULL DEFAULT 0;
+            UPDATE scans SET quarantined=(SELECT COUNT(*) FROM findings WHERE findings.scan_id=scans.id AND quarantine_id IS NOT NULL);
+            COMMIT;")?;
+    }
+    Ok(db)
+}
+
+// Les consultations web ne recréent pas le schéma et ne prennent aucun verrou d'écriture.
+pub fn read(path: &Path) -> Result<Connection> {
+    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    db.busy_timeout(Duration::from_secs(5))?;
     Ok(db)
 }
 
@@ -37,8 +55,8 @@ pub fn start(db: &Connection, scan: &Scan) -> Result<()> {
 }
 
 pub fn finish(db: &Connection, scan: &Scan) -> Result<()> {
-    db.execute("UPDATE scans SET finished_at=?2,verdict=?3,files=?4,bytes=?5,threats=?6,errors=?7 WHERE id=?1",
-        params![scan.id,scan.finished_at,scan.verdict,scan.files,scan.bytes,scan.threats,scan.errors])?;
+    db.execute("UPDATE scans SET finished_at=?2,verdict=?3,files=?4,bytes=?5,threats=?6,errors=?7,quarantined=?8 WHERE id=?1",
+        params![scan.id,scan.finished_at,scan.verdict,scan.files,scan.bytes,scan.threats,scan.errors,scan.quarantined])?;
     Ok(())
 }
 
@@ -49,7 +67,7 @@ pub fn finding(db: &Connection, f: &Finding) -> Result<()> {
 }
 
 pub fn scans(db: &Connection) -> Result<Vec<Scan>> {
-    let mut stmt = db.prepare("SELECT id,device,started_at,finished_at,verdict,files,bytes,threats,errors,engine FROM scans ORDER BY started_at DESC,rowid DESC LIMIT 100")?;
+    let mut stmt = db.prepare("SELECT id,device,started_at,finished_at,verdict,files,bytes,threats,errors,engine,quarantined FROM scans ORDER BY started_at DESC,rowid DESC LIMIT 100")?;
     let rows = stmt.query_map([], |r| {
         Ok(Scan {
             id: r.get(0)?,
@@ -62,6 +80,7 @@ pub fn scans(db: &Connection) -> Result<Vec<Scan>> {
             threats: r.get(7)?,
             errors: r.get(8)?,
             engine: r.get(9)?,
+            quarantined: r.get(10)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -113,6 +132,27 @@ pub fn kpis(db: &Connection) -> Result<Kpis> {
 mod tests {
     use super::*;
     #[test]
+    fn migration_keeps_existing_history_and_quarantine_counts() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("old.db");
+        let old = Connection::open(&path)?;
+        old.execute_batch("CREATE TABLE scans(id TEXT PRIMARY KEY,device TEXT,started_at INTEGER,finished_at INTEGER,verdict TEXT,files INTEGER,bytes INTEGER,threats INTEGER,errors INTEGER,engine TEXT);
+            CREATE TABLE findings(id INTEGER PRIMARY KEY,scan_id TEXT,path TEXT,kind TEXT,detail TEXT,quarantine_id TEXT,sha256 TEXT);
+            INSERT INTO scans VALUES('legacy','sdb1',1,2,'infected',7,1024,1,0,'old-engine');
+            INSERT INTO findings VALUES(1,'legacy','test.txt','threat','EICAR','private-copy','sha');")?;
+        drop(old);
+        let db = open(&path)?;
+        assert_eq!(scans(&db)?[0].quarantined, 1);
+        drop(db);
+        let db = open(&path)?;
+        assert_eq!(scans(&db)?[0].files, 7);
+        assert_eq!(kpis(&db)?.quarantined, 1);
+        let reader = read(&path)?;
+        assert_eq!(findings(&reader, "legacy")?.len(), 1);
+        assert!(reader.execute("DELETE FROM scans", []).is_err());
+        Ok(())
+    }
+    #[test]
     fn interrupted_scans_survive_recreation_without_becoming_clean() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let path = temp.path().join("history.db");
@@ -130,6 +170,7 @@ mod tests {
                 threats: 0,
                 errors: 0,
                 engine: "test".into(),
+                quarantined: 0,
             },
         )?;
         drop(db);

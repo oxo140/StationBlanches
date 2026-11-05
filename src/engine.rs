@@ -6,18 +6,24 @@ use anyhow::{Context, Result, bail, ensure};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
-    io::{Read, Write},
-    net::{TcpStream, ToSocketAddrs},
+    io::{BufRead, BufReader, Read, Write},
+    net::{SocketAddr, TcpStream, ToSocketAddrs},
     time::{Duration, Instant},
 };
 
 const RESPONSE_LIMIT: usize = 8192;
+const CHUNK_SIZE: usize = 256 * 1024;
 
 fn connect(address: &str) -> Result<TcpStream> {
     let addresses: Vec<_> = address.to_socket_addrs()?.collect();
     // Le nom est interne à Docker, aucun port clamd n'est publié sur l'hôte.
     let addr = addresses.first().context("Adresse clamd introuvable")?;
-    let stream = TcpStream::connect_timeout(addr, Duration::from_secs(5))?;
+    connect_address(*addr)
+}
+
+fn connect_address(address: SocketAddr) -> Result<TcpStream> {
+    let stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))?;
+    stream.set_nodelay(true)?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     Ok(stream)
@@ -25,15 +31,14 @@ fn connect(address: &str) -> Result<TcpStream> {
 
 fn response(stream: &mut TcpStream) -> Result<String> {
     let mut result = Vec::new();
-    loop {
-        let mut byte = [0];
-        ensure!(stream.read(&mut byte)? == 1, "Réponse clamd tronquée");
-        if byte[0] == 0 {
-            break;
-        }
-        ensure!(result.len() < RESPONSE_LIMIT, "Réponse clamd trop longue");
-        result.push(byte[0]);
-    }
+    let mut reader = BufReader::with_capacity(1024, stream).take((RESPONSE_LIMIT + 2) as u64);
+    reader.read_until(0, &mut result)?;
+    ensure!(
+        result.last() == Some(&0),
+        "Réponse clamd tronquée ou trop longue"
+    );
+    result.pop();
+    ensure!(result.len() <= RESPONSE_LIMIT, "Réponse clamd trop longue");
     Ok(String::from_utf8(result)?)
 }
 
@@ -120,51 +125,96 @@ pub struct FileResult {
     pub bytes: u64,
 }
 
-pub fn scan(config: &Config, file: &mut File) -> Result<FileResult> {
-    let before = file.metadata()?;
-    ensure!(before.is_file(), "Objet non régulier");
-    ensure!(
-        before.len() <= config.max_file_bytes,
-        "Fichier trop volumineux pour la politique de scan"
-    );
-    let mut stream = connect(&config.clamd)?;
-    stream.write_all(b"zINSTREAM\0")?;
-    let mut buffer = [0u8; 64 * 1024];
-    let mut hash = Sha256::new();
-    let mut bytes = 0u64;
-    let started = Instant::now();
-    loop {
-        ensure!(
-            started.elapsed() < Duration::from_secs(120),
-            "Durée maximale d'analyse dépassée"
-        );
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        bytes += count as u64;
-        ensure!(
-            bytes <= config.max_file_bytes,
-            "Fichier devenu trop volumineux"
-        );
-        hash.update(&buffer[..count]);
-        stream.write_all(&(count as u32).to_be_bytes())?;
-        stream.write_all(&buffer[..count])?;
+pub struct Client {
+    address: SocketAddr,
+    max_file_bytes: u64,
+    buffer: Vec<u8>,
+}
+
+impl Client {
+    pub fn new(config: &Config) -> Result<Self> {
+        let address = config
+            .clamd
+            .to_socket_addrs()?
+            .next()
+            .context("Adresse clamd introuvable")?;
+        Ok(Self {
+            address,
+            max_file_bytes: config.max_file_bytes,
+            buffer: vec![0; CHUNK_SIZE],
+        })
     }
-    stream.write_all(&0u32.to_be_bytes())?;
-    let detection = parse_detection(&response(&mut stream)?)?;
-    let after = file.metadata()?;
-    ensure!(
-        bytes == before.len()
-            && before.len() == after.len()
-            && before.modified()? == after.modified()?,
-        "Fichier modifié pendant le scan"
-    );
-    Ok(FileResult {
-        detection,
-        sha256: format!("{:x}", hash.finalize()),
-        bytes,
-    })
+
+    pub fn scan(
+        &mut self,
+        file: &mut File,
+        mut progress: impl FnMut(u64) -> Result<()>,
+    ) -> Result<FileResult> {
+        let before = file.metadata()?;
+        ensure!(before.is_file(), "Objet non régulier");
+        ensure!(
+            before.len() <= self.max_file_bytes,
+            "Fichier trop volumineux pour la politique de scan"
+        );
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            // SAFETY: descripteur valide ; conseil de lecture uniquement, aucun changement du fichier.
+            unsafe {
+                libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_SEQUENTIAL);
+            }
+        }
+        let mut stream = connect_address(self.address)?;
+        stream.write_all(b"zINSTREAM\0")?;
+        let buffer = &mut self.buffer;
+        let mut hash = Sha256::new();
+        let mut bytes = 0u64;
+        let started = Instant::now();
+        let mut published = Instant::now();
+        progress(0)?;
+        loop {
+            ensure!(
+                started.elapsed() < Duration::from_secs(120),
+                "Durée maximale d'analyse dépassée"
+            );
+            let count = file.read(buffer)?;
+            if count == 0 {
+                break;
+            }
+            bytes += count as u64;
+            ensure!(
+                bytes <= self.max_file_bytes,
+                "Fichier devenu trop volumineux"
+            );
+            hash.update(&buffer[..count]);
+            stream.write_all(&(count as u32).to_be_bytes())?;
+            stream.write_all(&buffer[..count])?;
+            if published.elapsed() >= Duration::from_millis(250) {
+                progress(bytes)?;
+                published = Instant::now();
+            }
+        }
+        stream.write_all(&0u32.to_be_bytes())?;
+        progress(bytes)?;
+        let detection = parse_detection(&response(&mut stream)?)?;
+        let after = file.metadata()?;
+        ensure!(
+            bytes == before.len()
+                && before.len() == after.len()
+                && before.modified()? == after.modified()?,
+            "Fichier modifié pendant le scan"
+        );
+        Ok(FileResult {
+            detection,
+            sha256: format!("{:x}", hash.finalize()),
+            bytes,
+        })
+    }
+}
+
+#[cfg(test)]
+pub fn scan(config: &Config, file: &mut File) -> Result<FileResult> {
+    Client::new(config)?.scan(file, |_| Ok(()))
 }
 
 #[cfg(test)]
@@ -224,7 +274,7 @@ mod tests {
                 if size == 0 {
                     break;
                 }
-                ensure!(size <= 65536, "Bloc trop grand");
+                ensure!(size <= CHUNK_SIZE, "Bloc trop grand");
                 let mut chunk = vec![0; size];
                 connection.read_exact(&mut chunk)?;
                 received.extend(chunk);
@@ -248,7 +298,11 @@ mod tests {
             max_file_bytes: 104857600,
             max_update_age: 86400,
         };
-        let result = scan(&config, &mut File::open(path)?)?;
+        let mut updates=Vec::new();
+        let result = Client::new(&config)?.scan(&mut File::open(path)?,|bytes|{updates.push(bytes);Ok(())})?;
+        assert_eq!(updates.first(),Some(&0));
+        assert_eq!(updates.last(),Some(&(content.len() as u64)));
+        assert!(updates.windows(2).all(|pair|pair[0]<=pair[1]));
         assert_eq!(result.bytes, content.len() as u64);
         assert_eq!(result.sha256, format!("{:x}", Sha256::digest(&content)));
         assert_eq!(result.detection, Detection::Clear);

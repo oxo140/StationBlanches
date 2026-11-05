@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::{
     fs,
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,6 +52,41 @@ pub fn list(root: &Path) -> Result<Vec<Mount>> {
 
 pub fn still_present(mount: &Mount, root: &Path) -> bool {
     list(root).is_ok_and(|mounts| mounts.iter().any(|m| m == mount))
+}
+
+// Une vérification par fichier provoquait deux lectures complètes de mountinfo pour chaque petit fichier.
+// Le contrôle est borné à 4/s, et systématiquement forcé avant et après l'analyse entière.
+pub struct Guard<'a> {
+    mount: &'a Mount,
+    root: &'a Path,
+    checked: Option<Instant>,
+    present: bool,
+}
+impl<'a> Guard<'a> {
+    pub fn new(mount: &'a Mount, root: &'a Path) -> Self {
+        Self {
+            mount,
+            root,
+            checked: None,
+            present: true,
+        }
+    }
+    pub fn check(&mut self, force: bool) -> Result<()> {
+        if self.present
+            && (force
+                || self
+                    .checked
+                    .is_none_or(|t| t.elapsed() >= Duration::from_millis(250)))
+        {
+            self.present = still_present(self.mount, self.root);
+            self.checked = Some(Instant::now());
+        }
+        anyhow::ensure!(
+            self.present,
+            "Périphérique retiré ou remplacé pendant l'analyse"
+        );
+        Ok(())
+    }
 }
 
 #[cfg(test)]

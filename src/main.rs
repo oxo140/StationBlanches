@@ -8,9 +8,9 @@ mod scanner;
 use anyhow::{Context, Result};
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{StatusCode, header},
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
 };
 use config::Config;
@@ -32,6 +32,7 @@ struct App {
     progress: Arc<RwLock<Progress>>,
     error: Arc<RwLock<Option<String>>>,
     present_results: Arc<RwLock<Vec<model::Scan>>>,
+    pending: Arc<RwLock<usize>>,
 }
 
 fn worker(app: App, stop: Arc<AtomicBool>) {
@@ -42,6 +43,10 @@ fn worker(app: App, stop: Arc<AtomicBool>) {
             let mounts = mounts::list(&app.config.media)?;
             completed.retain(|key, _| mounts.iter().any(|m| &m.key == key));
             *app.present_results.write().unwrap() = completed.values().cloned().collect();
+            *app.pending.write().unwrap() = mounts
+                .iter()
+                .filter(|m| !completed.contains_key(&m.key))
+                .count();
             if !app.engine.read().unwrap().ready {
                 return Ok(());
             }
@@ -61,6 +66,10 @@ fn worker(app: App, stop: Arc<AtomicBool>) {
                     scanner::run(&app.config, &mount, &engine.version, &app.progress, &stop)?;
                 completed.insert(mount.key, result);
                 *app.present_results.write().unwrap() = completed.values().cloned().collect();
+                let mut pending = app.pending.write().unwrap();
+                *pending = pending.saturating_sub(1);
+                drop(pending);
+                *app.progress.write().unwrap() = Progress::default();
             }
             Ok(())
         })();
@@ -87,10 +96,10 @@ fn worker(app: App, stop: Arc<AtomicBool>) {
 
 async fn snapshot(State(app): State<App>) -> Result<Json<serde_json::Value>, StatusCode> {
     tokio::task::spawn_blocking(move || {
-        let db=db::open(&app.config.database).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        let db=db::read(&app.config.database).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
         let kpis=db::kpis(&db).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
         let scans=db::scans(&db).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-        Ok(Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"engine":app.engine.read().unwrap().clone(),"progress":app.progress.read().unwrap().clone(),"present_results":app.present_results.read().unwrap().clone(),"error":app.error.read().unwrap().clone(),"kpis":kpis,"scans":scans})))
+        Ok(Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"engine":app.engine.read().unwrap().clone(),"progress":app.progress.read().unwrap().clone(),"present_results":app.present_results.read().unwrap().clone(),"pending":*app.pending.read().unwrap(),"error":app.error.read().unwrap().clone(),"kpis":kpis,"scans":scans})))
     }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
 }
 
@@ -102,13 +111,27 @@ async fn findings(
         return Err(StatusCode::BAD_REQUEST);
     }
     tokio::task::spawn_blocking(move || {
-        let db = db::open(&app.config.database).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        let db = db::read(&app.config.database).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
         db::findings(&db, &id)
             .map(Json)
             .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
     })
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+}
+
+async fn live(State(app): State<App>) -> Json<serde_json::Value> {
+    Json(
+        serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"engine":app.engine.read().unwrap().clone(),"progress":app.progress.read().unwrap().clone(),"present_results":app.present_results.read().unwrap().clone(),"pending":*app.pending.read().unwrap(),"error":app.error.read().unwrap().clone()}),
+    )
+}
+
+async fn index(Query(query): Query<HashMap<String, String>>) -> Response {
+    if query.contains_key("kiosk") {
+        Redirect::temporary("/kiosk").into_response()
+    } else {
+        Html(include_str!("../web/index.html")).into_response()
+    }
 }
 
 async fn ready(State(app): State<App>) -> impl IntoResponse {
@@ -146,6 +169,7 @@ async fn main() -> Result<()> {
         progress: Arc::new(RwLock::new(Progress::default())),
         error: Arc::new(RwLock::new(None)),
         present_results: Arc::new(RwLock::new(Vec::new())),
+        pending: Arc::new(RwLock::new(0)),
     };
     let stop = Arc::new(AtomicBool::new(false));
     let worker_app = app.clone();
@@ -156,10 +180,15 @@ async fn main() -> Result<()> {
     // La boucle de scan ne bloque jamais le serveur HTTP.
     let worker = tokio::task::spawn_blocking(move || worker(worker_app, worker_stop));
     let routes=Router::new()
-        .route("/",get(||async {Html(include_str!("../web/index.html"))}))
+        .route("/",get(index))
+        .route("/kiosk",get(||async {Html(include_str!("../web/kiosk.html"))}))
+        .route("/kiosk.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/kiosk.js"))}))
+        .route("/state.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/state.js"))}))
+        .route("/kiosk.css",get(||async {([(header::CONTENT_TYPE,"text/css; charset=utf-8")],include_str!("../web/kiosk.css"))}))
         .route("/app.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/app.js"))}))
         .route("/style.css",get(||async {([(header::CONTENT_TYPE,"text/css; charset=utf-8")],include_str!("../web/style.css"))}))
         .route("/api/status",get(snapshot))
+        .route("/api/live",get(live))
         .route("/api/scans/{id}/findings",get(findings))
         .route("/health/live",get(||async {StatusCode::OK}))
         .route("/health/ready",get(ready))

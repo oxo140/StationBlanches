@@ -3,7 +3,9 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 temp_dir=$(mktemp -d)
 project="station-web-ci-$RANDOM"
-export STATION_IP=127.0.0.1
+# Une IP de bridge réelle évite les cas particuliers TLS/SNI des adresses loopback.
+export STATION_IP
+STATION_IP=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1);exit}}')
 export SB_COMPOSE_TEST_MEDIA="$temp_dir/media"
 export SB_COMPOSE_TEST_AUTH="$temp_dir/admin.caddy"
 compose() { docker compose -p "$project" -f compose.yaml -f tests/compose-web.yaml "$@"; }
@@ -32,6 +34,8 @@ done
 curl --noproxy '*' -fsS -D "$temp_dir/headers" http://127.0.0.1:8080/ | grep -q 'Station Blanche'
 grep -qi '^content-security-policy:' "$temp_dir/headers"
 [[ $(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health/ready) == 503 ]]
+curl --noproxy '*' -fsS http://127.0.0.1:8080/kiosk | grep -q 'CONTRÔLE DES SUPPORTS USB'
+curl --noproxy '*' -fsS http://127.0.0.1:8080/api/live | jq -e 'has("progress") and has("pending")'
 app_id=$(compose ps -q app)
 web_id=$(compose ps -q web)
 # La publication du kiosque appartient au proxy, pas au réseau interne de l'application.
@@ -40,10 +44,10 @@ docker inspect "$app_id" | jq -e '.[0].HostConfig.PortBindings | . == null or le
 docker inspect "$app_id" | jq -e '.[0].NetworkSettings.Networks | length == 2'
 compose cp web:/data/caddy/pki/authorities/local/root.crt "$temp_dir/ca.crt"
 for attempt in {1..30}; do
-    if status=$(curl --noproxy '*' --cacert "$temp_dir/ca.crt" -s -o /dev/null -w '%{http_code}' https://127.0.0.1/); then break; fi
+    if status=$(curl --noproxy '*' --cacert "$temp_dir/ca.crt" --connect-timeout 2 --max-time 4 -s -o /dev/null -w '%{http_code}' "https://$STATION_IP/"); then break; fi
     [[ "$attempt" != 30 ]] || exit 1
     sleep 1
 done
 [[ "$status" == 401 ]]
-curl --noproxy '*' --cacert "$temp_dir/ca.crt" --user admin:temporary-ci-password-not-deployed -fsS https://127.0.0.1/ | grep -q 'Station Blanche'
+curl --noproxy '*' --cacert "$temp_dir/ca.crt" --user admin:temporary-ci-password-not-deployed -fsS "https://$STATION_IP/" | grep -q 'Station Blanche'
 echo 'Production Compose local kiosk and authenticated HTTPS checks passed'
