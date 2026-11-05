@@ -156,7 +156,7 @@ docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 bash deploy/check-dependencies.sh
-echo 'Attente des signatures et tests automatiques sain / EICAR (jusqu’à 15 minutes au premier démarrage).'
+echo "Attente des signatures et tests automatiques sain / EICAR (jusqu'à 15 minutes au premier démarrage)."
 bash deploy/test-antivirus.sh --engine --wait 900
 echo "Installation terminée : $project"
 echo 'Interface locale : http://127.0.0.1:8080/?kiosk=1'
