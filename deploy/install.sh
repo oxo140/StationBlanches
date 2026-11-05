@@ -5,6 +5,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 if [[ "${1:-}" == --check ]]; then exec bash deploy/check-dependencies.sh; fi
 if [[ "${1:-}" == --network-check ]]; then exec bash deploy/network.sh --check; fi
 if [[ "${1:-}" == --network ]]; then exec bash deploy/network.sh; fi
+desktop_requested=''
+if [[ "${1:-}" == --desktop-user ]]; then
+    [[ $# == 2 ]] || { echo 'Utilisation : sudo bash installation.sh --desktop-user UTILISATEUR' >&2; exit 2; }
+    desktop_requested=$2
+    shift 2
+fi
 [[ $EUID == 0 ]] || { echo 'Utilisation : sudo bash installation.sh [ADRESSE_IP] [UTILISATEUR_BUREAU]' >&2; exit 1; }
 # shellcheck source=deploy/lib.sh
 source deploy/lib.sh
@@ -16,9 +22,9 @@ sb_platform
 sb_require_tty
 project=$(pwd)
 station_ip=${1:-}
-desktop_user=$(sb_desktop_user "${2:-}" || true)
+desktop_user=$(sb_desktop_user "${desktop_requested:-${2:-}}" || true)
 [[ -n "$desktop_user" && "$desktop_user" != root ]] || {
-    echo 'Impossible de choisir un compte bureau non root sans ambiguïté. Lancer via sudo depuis ce compte, ou préciser : sudo bash installation.sh ADRESSE_IP UTILISATEUR.' >&2
+    echo 'Impossible de choisir un compte bureau non root sans ambiguïté. Lancer via sudo depuis ce compte, ou préciser : sudo bash installation.sh --desktop-user UTILISATEUR.' >&2
     exit 1
 }
 user_home=$(getent passwd "$desktop_user" | cut -d: -f6)
@@ -146,7 +152,7 @@ if [[ ! -s secrets/admin.caddy ]]; then
 else
     echo '[OK] Mot de passe HTTPS existant conservé.'
 fi
-bash deploy/check-dependencies.sh
+docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 bash deploy/check-dependencies.sh

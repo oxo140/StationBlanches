@@ -3,7 +3,7 @@
 SB_APT_REFRESHED=0
 sb_apt_refresh() {
     if [[ "$SB_APT_REFRESHED" == 0 ]]; then
-        apt-get -o APT::Update::Error-Mode=any update
+        apt-get -o APT::Update::Error-Mode=any update || { echo '[ERREUR APT] Rafraîchissement des sources impossible ; installation arrêtée.' >&2; return 1; }
         SB_APT_REFRESHED=1
     fi
 }
@@ -19,7 +19,7 @@ sb_apt_install_missing() {
         if sb_installed "$package"; then echo "[OK] $package déjà installé."; else missing+=("$package"); fi
     done
     if (( ${#missing[@]} == 0 )); then return 0; fi
-    sb_apt_refresh
+    sb_apt_refresh || return 1
     for package in "${missing[@]}"; do
         sb_apt_candidate "$package" || { echo "[ERREUR SOURCES APT] Aucun candidat pour $package. Vérifier les dépôts Debian 13 / main et le diagnostic réseau." >&2; return 1; }
     done

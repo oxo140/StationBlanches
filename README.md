@@ -34,13 +34,13 @@ Ne pas installer cette station sur le disque USB destiné aux analyses : les rè
 (set -e; sudo apt-get update; sudo apt-get install -y ca-certificates curl; sb_install=$(mktemp); trap 'rm -f -- "$sb_install"' EXIT; curl -fsSL https://raw.githubusercontent.com/oxo140/StationBlanches/codex/v2-rust-docker/deploy/bootstrap.sh -o "$sb_install"; sudo bash "$sb_install")
 ```
 
-Cette commande télécharge l'installateur depuis **la branche de refonte** puis l'exécute ; elle fonctionne avant la fusion dans `main`. Les sources sont installées dans `/opt/station-blanche`. Le script vérifie Debian 13 amd64, inventorie les dépendances et demande l'adresse IP avec une proposition automatique.
+Cette commande télécharge l'installateur depuis **la branche de refonte** puis l'exécute ; elle fonctionne avant la fusion dans `main`. Les sources sont installées dans `/opt/station-blanche`. Le script vérifie Debian 13 amd64, inventorie les dépendances et détecte l'adresse IP automatiquement.
 
 L'installation est **automatique** : la seule question d'option est **« Souhaitez-vous passer en IPv4 manuelle ? »**, avec **Non par défaut**. Sinon, le réseau actuel (DHCP sur une Debian standard) reste inchangé et l'IP de la station est détectée sans saisie. Les paramètres réseau ne sont demandés que si le mode manuel est choisi. Le diagnostic Internet reste obligatoire et signale une panne sans modifier les DNS tout seul ; utiliser `--network` pour les réparer si nécessaire.
 
 Le script installe automatiquement les dépendances manquantes, Docker et ses plugins, Xfce si aucun bureau reconnu n'est présent, Chromium, son démarrage automatique, SSH et jq. Il configure les montages USB, démarre les conteneurs et lance les tests sain/EICAR après disponibilité des signatures. Les paquets déjà installés, notamment Chromium, sont vérifiés et conservés. Les sources APT Docker actives sont reconnues en formats `.list` et `.sources` avant tout ajout : aucune source active n'est dupliquée. Les paquets manquants doivent avoir un candidat APT valide ; une source cassée produit une erreur explicite. Le dépôt applicatif existant est mis à jour sans nouveau clonage s'il est propre et correspond à la branche attendue.
 
-La saisie du **mot de passe HTTPS** reste nécessaire au premier lancement ; un mot de passe existant est conservé. Le compte bureau est détecté depuis sudo ou l'unique compte utilisateur normal. En cas de plusieurs comptes sans utilisateur sudo identifiable, préciser le compte dans la commande d'installation. Rust et ClamAV sont fournis dans les images Docker.
+La saisie du **mot de passe HTTPS** reste nécessaire au premier lancement ; un mot de passe existant est conservé. Le compte bureau est détecté depuis sudo ou l'unique compte utilisateur normal. En cas de plusieurs comptes sans utilisateur sudo identifiable, préciser `sudo bash installation.sh --desktop-user UTILISATEUR`, sans devoir saisir une IP. Rust et ClamAV sont fournis dans les images Docker.
 
 ### Réseau : DHCP, IPv4 manuelle et DNS
 
@@ -75,10 +75,10 @@ git clone https://github.com/oxo140/StationBlanches.git
 cd StationBlanches
 # Tant que la refonte n'est pas fusionnée :
 git switch codex/v2-rust-docker
-sudo bash installation.sh 192.168.1.50 "$USER"
+sudo bash installation.sh
 ```
 
-Remplacer l'adresse par celle de la VM. Le script vérifie Debian 13 et amd64, installe Docker via son dépôt officiel si absent, prépare systemd/udev et construit les images. Il demande un mot de passe administrateur de 16 caractères minimum et en conserve seulement le hash bcrypt. Les fichiers privés sont dans `secrets/`, exclus de Git.
+Le script détecte l'adresse de la VM, installe Docker via son dépôt officiel si absent, prépare systemd/udev et construit les images. Il demande un mot de passe administrateur de 16 caractères minimum et en conserve seulement le hash bcrypt. Les fichiers privés sont dans `secrets/`, exclus de Git.
 
 Diagnostic des dépendances, **sans installer ni modifier quoi que ce soit** :
 
@@ -94,7 +94,7 @@ Retirer puis réinsérer les clés déjà montées par le bureau avant l'install
 
 - Écran local : `http://127.0.0.1:8080/?kiosk=1`, lecture seule, accessible uniquement depuis la station.
 - Supervision distante : `https://192.168.1.50`, utilisateur `admin`, mot de passe choisi à l'installation.
-- Chromium se lance à la connexion au bureau si l'utilisateur a été fourni au script. L'ouverture automatique de session et la désactivation de veille restent des choix à configurer dans Debian.
+- Chromium se lance à la connexion du compte bureau détecté. L'ouverture automatique de session et la désactivation de veille restent des choix à configurer dans Debian.
 
 ## Tester : fichier sain et détection antivirus
 
