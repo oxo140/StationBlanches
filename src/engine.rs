@@ -298,11 +298,14 @@ mod tests {
             max_file_bytes: 104857600,
             max_update_age: 86400,
         };
-        let mut updates=Vec::new();
-        let result = Client::new(&config)?.scan(&mut File::open(path)?,|bytes|{updates.push(bytes);Ok(())})?;
-        assert_eq!(updates.first(),Some(&0));
-        assert_eq!(updates.last(),Some(&(content.len() as u64)));
-        assert!(updates.windows(2).all(|pair|pair[0]<=pair[1]));
+        let mut updates = Vec::new();
+        let result = Client::new(&config)?.scan(&mut File::open(path)?, |bytes| {
+            updates.push(bytes);
+            Ok(())
+        })?;
+        assert_eq!(updates.first(), Some(&0));
+        assert_eq!(updates.last(), Some(&(content.len() as u64)));
+        assert!(updates.windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(result.bytes, content.len() as u64);
         assert_eq!(result.sha256, format!("{:x}", Sha256::digest(&content)));
         assert_eq!(result.detection, Detection::Clear);
