@@ -112,7 +112,17 @@ Retirer puis réinsérer les clés déjà montées par le bureau avant l'install
 
 - Écran local : `http://127.0.0.1:8080/kiosk`, lecture seule, accessible uniquement depuis la station.
 - Supervision distante : `https://192.168.1.50`, utilisateur `admin`, mot de passe choisi à l'installation.
-- Chromium se lance à la connexion du compte bureau détecté. L'ouverture automatique de session et la désactivation de veille restent des choix à configurer dans Debian.
+- Le bureau est détecté automatiquement : GNOME, GNOME Flashback, Xfce, KDE Plasma, Cinnamon, MATE, LXDE et LXQt. L'installateur configure l'ouverture automatique du compte bureau avec GDM3, LightDM, SDDM ou LXDM, désactive la suspension système et applique les réglages anti-veille/verrouillage au compte du kiosque. **Le mot de passe Debian existant est conservé et n'est jamais stocké par Station Blanche.** L'administration web garde sa connexion séparée.
+- Après installation ou mise à jour de ces réglages, **redémarrer Debian** pour appliquer le gestionnaire de connexion, logind et tous les composants du bureau. La session en cours n'est pas arrêtée par l'installateur. Les réglages système d'origine sont sauvegardés dans `/var/lib/station-blanche/desktop-backups`, ceux du compte dans `~/.config/station-blanche/desktop-backups`.
+- Chromium utilise un profil dédié. Le superviseur contrôle la page réellement chargée, son rendu et l'onglet actif via un pipe privé, **sans port de débogage réseau**. Une supervision ou une page de connexion Station Blanche active est acceptée. Si l'onglet disparaît, il est rouvert après cinq secondes de défaut confirmé ; si Chromium se ferme, le navigateur est relancé après cinq secondes. Un navigateur bloqué entraîne une récupération limitée puis un redémarrage. Le démarrage initial dispose d'une tolérance de vingt secondes.
+
+Diagnostic du kiosque après connexion automatique au bureau :
+
+```bash
+cd /opt/station-blanche && sudo bash deploy/check-kiosk.sh
+```
+
+Le diagnostic exige une confirmation récente de Chromium ; un simple processus présent ne suffit pas. Il vérifie une page chargée et un onglet actif, sans pouvoir confirmer l'état physique du moniteur. Pour réappliquer uniquement les réglages du bureau : `sudo bash deploy/desktop.sh UTILISATEUR`. Un gestionnaire de connexion inconnu provoque une erreur explicite plutôt qu'une configuration approximative.
 
 ## Tester : fichier sain et détection antivirus
 

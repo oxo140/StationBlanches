@@ -21,6 +21,7 @@ jobs:
       - run: shellcheck installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh tests/*.sh
       - run: bash tests/installer-checks.sh
       - run: bash tests/kiosk-launch-checks.sh
+      - run: python3 tests/desktop_checks.py
       - run: bash tests/apt-checks.sh
       - run: bash tests/network-checks.sh
       - run: bash tests/usb-verifier-checks.sh

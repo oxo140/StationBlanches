@@ -1,8 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-install -d -m 0755 /usr/local/lib/station-blanche
-install -m 0755 deploy/host/kiosk-launch.sh /usr/local/lib/station-blanche/kiosk-launch.sh
+bash deploy/desktop.sh
 bash deploy/prepare-auth.sh
 docker compose config --quiet
 docker compose build --pull

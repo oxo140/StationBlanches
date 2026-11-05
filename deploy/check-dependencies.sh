@@ -27,6 +27,10 @@ check 'Docker Buildx' docker buildx version
 check 'Démon Docker accessible' docker info --format '{{.ServerVersion}}'
 check 'Paquet Chromium' sb_installed chromium
 check 'Gestion de confiance Chromium (NSS)' sb_installed libnss3-tools
+check 'Supervision locale (Python système)' sb_installed python3
+check 'Réglages écran X11' sb_installed x11-xserver-utils
+check 'Lanceur kiosque installé' test -x /usr/local/lib/station-blanche/kiosk-launch.sh
+check 'Surveillance du rendu installée' test -x /usr/local/lib/station-blanche/kiosk-supervisor.py
 check 'Hachage de connexion disponible' test -s secrets/admin.hash
 check 'Chromium utilisable' chromium --version
 check 'Outils de test et KPI (jq)' jq --version

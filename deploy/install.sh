@@ -27,8 +27,6 @@ desktop_user=$(sb_desktop_user "${desktop_requested:-${2:-}}" || true)
     echo 'Impossible de choisir un compte bureau non root sans ambiguïté. Lancer via sudo depuis ce compte, ou préciser : sudo bash installation.sh --desktop-user UTILISATEUR.' >&2
     exit 1
 }
-user_home=$(getent passwd "$desktop_user" | cut -d: -f6)
-desktop_group=$(id -gn "$desktop_user")
 echo '=== Station Blanche v2 — installation automatique ==='
 echo "[OK] Compte bureau : $desktop_user"
 # Seule option demandée : passer du réseau actuel (DHCP par défaut) à une IPv4 manuelle.
@@ -114,19 +112,6 @@ if ! command -v chromium >/dev/null; then
     DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y chromium
 fi
 chromium --version
-install -d -m 0755 /usr/local/lib/station-blanche
-install -m 0755 deploy/host/kiosk-launch.sh /usr/local/lib/station-blanche/kiosk-launch.sh
-install -d -o "$desktop_user" -g "$desktop_group" -m 0755 "$user_home/.config/autostart"
-cat > "$user_home/.config/autostart/station-blanche.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Station Blanche
-Exec=/usr/local/lib/station-blanche/kiosk-launch.sh
-Terminal=false
-X-GNOME-Autostart-enabled=true
-EOF
-chown "$desktop_user:$desktop_group" "$user_home/.config/autostart/station-blanche.desktop"
-chmod 0644 "$user_home/.config/autostart/station-blanche.desktop"
 systemctl enable --now ssh
 install -d -m 0755 /usr/local/lib/station-blanche
 install -m 0755 deploy/host/prepare-media.sh deploy/host/mount-usb.sh /usr/local/lib/station-blanche/
@@ -136,6 +121,7 @@ systemctl daemon-reload
 systemctl enable --now station-blanche-media.service
 udevadm control --reload-rules
 printf 'STATION_IP=%s\n' "$station_ip" > .env
+bash deploy/desktop.sh "$desktop_user"
 install -d -m 0700 secrets
 if [[ ! -s secrets/admin.caddy ]]; then
     docker pull caddy:2

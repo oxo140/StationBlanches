@@ -17,6 +17,8 @@ Le README propose une commande d'installation en une ligne. Le bootstrap réutil
 5. Vérifier que l'installation/mise à jour approuve le certificat public Caddy sur Debian et pour Chromium. Après redémarrage du navigateur, l'IP HTTPS ne doit plus afficher d'erreur TLS. Sur un autre poste, importer séparément le certificat public après vérification de l'empreinte.
 6. Redémarrer la VM : propagation des montages disponible, services actifs, kiosque lancé après connexion au bureau.
 7. Fermer Chromium : vérifier sa réouverture après cinq secondes et l'absence d'une deuxième instance si le lanceur est exécuté deux fois.
+8. Vérifier le bureau et le gestionnaire de connexion détectés. Après redémarrage : ouverture automatique du compte prévu sans modification du mot de passe Debian ; absence de verrouillage, écran noir et suspension après le délai habituel. Refaire la recette sur chaque bureau utilisé, en X11 et Wayland lorsqu'ils sont disponibles.
+9. Garder Chromium ouvert mais fermer l'onglet Station Blanche : vérifier sa réouverture. Ouvrir la supervision : elle doit rester utilisable sans retour forcé au kiosque. Une page d'erreur ou un rendu bloqué ne doivent pas donner un diagnostic `visible`. Vérifier `sudo bash deploy/check-kiosk.sh` et l'absence de port de débogage Chromium en écoute.
 
 ## Supports et verdicts
 
