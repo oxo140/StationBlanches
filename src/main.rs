@@ -150,6 +150,9 @@ async fn main() -> Result<()> {
     let stop = Arc::new(AtomicBool::new(false));
     let worker_app = app.clone();
     let worker_stop = stop.clone();
+    let listener = tokio::net::TcpListener::bind(&config.listen)
+        .await
+        .context("Écoute HTTP")?;
     // La boucle de scan ne bloque jamais le serveur HTTP.
     let worker = tokio::task::spawn_blocking(move || worker(worker_app, worker_stop));
     let routes=Router::new()
@@ -169,11 +172,9 @@ async fn main() -> Result<()> {
             response
         }))
         .with_state(app);
-    let listener = tokio::net::TcpListener::bind(&config.listen)
-        .await
-        .context("Écoute HTTP")?;
     tracing::info!(listen=%config.listen,"Station Blanche v2 démarrée");
-    axum::serve(listener, routes)
+    let shutdown_stop = stop.clone();
+    let result = axum::serve(listener, routes)
         .with_graceful_shutdown(async move {
             #[cfg(unix)]
             {
@@ -188,7 +189,9 @@ async fn main() -> Result<()> {
             }
             stop.store(true, Ordering::Relaxed);
         })
-        .await?;
+        .await;
+    shutdown_stop.store(true, Ordering::Relaxed);
     worker.await?;
+    result?;
     Ok(())
 }

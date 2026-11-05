@@ -27,3 +27,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t station-blanche/app:test .
       - run: docker build -f deploy/clamav/Dockerfile -t station-blanche/clamav:test .
+      - run: bash tests/container-smoke.sh

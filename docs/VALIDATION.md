@@ -4,7 +4,7 @@ La compilation Windows ne remplace pas cette recette Linux. Noter la version Deb
 
 ## Contrôles automatisés
 
-La CI exécute formatage, Clippy et tests Rust sur Linux, puis construit les images. Les tests couvrent les verdicts, les signatures périmées ou non chargées, les réponses du moteur, l'historique après redémarrage, l'intégrité de quarantaine et le confinement des ouvertures Linux.
+La CI exécute formatage, Clippy et tests Rust sur Linux, puis construit les images. Les tests couvrent les verdicts, les signatures périmées ou non chargées, les réponses du moteur, l'historique après redémarrage, l'intégrité de quarantaine et le confinement des ouvertures Linux. Un vrai démon ClamAV détecte une signature de test inoffensive. Les images sont également démarrées avec leurs restrictions de production pour vérifier la disponibilité HTTP, le blocage sans moteur, les permissions des volumes, l'arrêt SIGTERM et la validation de la configuration HTTPS/authentification Caddy.
 
 ## Installation et accès
 
