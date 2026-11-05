@@ -38,6 +38,30 @@ Cette commande télécharge l'installateur depuis **la branche de refonte** puis
 
 L'assistant pose des questions **oui/non** pour installer les dépendances manquantes, Docker et ses plugins, puis choisir Xfce si aucun bureau reconnu n'est présent, Chromium, son démarrage automatique, SSH, les outils de vérification des KPI, le démarrage des conteneurs et les tests antivirus. Refuser un prérequis obligatoire arrête l'installation ; refuser une option conserve la configuration existante. Le mot de passe HTTPS existant est conservé. Rust et ClamAV sont installés dans les images Docker, sans chaîne Rust à installer sur Debian.
 
+### Réseau : DHCP, IPv4 manuelle et DNS
+
+**Avant apt et les téléchargements Docker**, l'installateur propose de conserver la configuration actuelle (DHCP par défaut si déjà actif), de passer en DHCP, de définir une adresse IPv4 manuelle avec préfixe et passerelle, ou de corriger seulement les DNS en conservant l'adresse DHCP. Les DNS manuels sont saisis explicitement ; aucun DNS public n'est imposé.
+
+Le diagnostic affiche les adresses et la route IPv4, teste `ping 8.8.8.8` et `ping google.com`, vérifie la résolution des domaines nécessaires à Docker, GitHub, Debian et ClamAV, puis l'accès HTTPS. Un ping filtré ne bloque pas une connexion dont le DNS et HTTPS fonctionnent. Une panne DNS, l'absence de route ou une erreur HTTPS bloque les téléchargements avec une explication.
+
+```bash
+cd /opt/station-blanche && sudo bash installation.sh --network-check
+```
+
+Configurer ou réparer le réseau indépendamment du reste de l'installation :
+
+```bash
+cd /opt/station-blanche && sudo bash installation.sh --network
+```
+
+La configuration automatique prend en charge un profil NetworkManager actif, ainsi que les configurations ifupdown simples dans `/etc/network/interfaces` et `/etc/network/interfaces.d/`. Les autres interfaces et les adresses IPv6 sont conservées. Les configurations personnalisées non reconnues sont laissées intactes et doivent être modifiées dans leur gestionnaire Debian.
+
+Avec NetworkManager, un profil est cloné et un checkpoint permet le retour à l'ancien profil sans confirmation dans les 180 secondes ; saisir **Yes** pour conserver les changements après le diagnostic. Avec ifupdown, les fichiers sont sauvegardés sous `/var/lib/station-blanche-network/` et un timer de restauration protège la modification ; confirmer le résultat dans le délai. Les hooks DNS prennent en charge les renouvellements dhclient/dhcpcd. Ne pas remplacer manuellement un `/etc/resolv.conf` géré par un résolveur.
+
+**`curl: (6) Could not resolve host: download.docker.com` indique une panne de résolution DNS**, même si une adresse DHCP est présente. Choisir l'option de correction DNS pour essayer les serveurs de votre réseau ou des serveurs publics autorisés (exemple : `1.1.1.1 8.8.8.8`). Une IPv4 fixe seule ne corrige pas le DNS. En cas d'erreur curl 6 pendant le téléchargement de la clé Docker, l'ancienne clé est conservée et l'installation s'arrête sans enregistrer une clé partielle. Si le DNS est tellement défaillant que GitHub lui-même ne peut pas être joint, utiliser d'abord les paramètres réseau du bureau ou `sudo nmtui` si disponible : aucun installateur distant ne peut être téléchargé sans résolution DNS.
+
+Avec DHCP, réserver l'adresse de la station dans le routeur. Si son adresse change, relancer l'installateur pour actualiser l'adresse d'écoute HTTPS et le certificat par IP.
+
 **Alternative : installation depuis un clone**, pour consulter les scripts avant exécution :
 
 ```bash

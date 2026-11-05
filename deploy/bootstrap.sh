@@ -10,6 +10,18 @@ if ! { exec 3<>/dev/tty; } 2>/dev/null; then echo 'Un terminal interactif est re
 repo=https://github.com/oxo140/StationBlanches.git
 branch=codex/v2-rust-docker
 target=/opt/station-blanche
+# Diagnostic initial sans dépendre de curl, ni télécharger un outil DNS.
+if command -v ping >/dev/null; then
+    if ping -4 -n -c 2 -W 2 8.8.8.8 >/dev/null 2>&1; then echo '[OK] Ping Google DNS 8.8.8.8.'; else echo '[INFO] Ping sans réponse ; ICMP peut être filtré.'; fi
+fi
+for domain in deb.debian.org github.com; do
+    if ! timeout 5 getent ahostsv4 "$domain" >/dev/null; then
+        echo "[ERREUR DNS] $domain ne peut pas être résolu. Corriger les DNS DHCP dans Debian avant de télécharger les sources." >&2
+        echo 'Si les sources sont déjà présentes : sudo bash /opt/station-blanche/deploy/network.sh' >&2
+        echo 'Sinon utiliser les paramètres réseau du bureau ou sudo nmtui (si installé).' >&2
+        exit 1
+    fi
+done
 missing=()
 for package in git ca-certificates; do
     if [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null) != 'install ok installed' ]]; then missing+=("$package"); fi

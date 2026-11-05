@@ -3,15 +3,21 @@ set -Eeuo pipefail
 umask 077
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 if [[ "${1:-}" == --check ]]; then exec bash deploy/check-dependencies.sh; fi
+if [[ "${1:-}" == --network-check ]]; then exec bash deploy/network.sh --check; fi
+if [[ "${1:-}" == --network ]]; then exec bash deploy/network.sh; fi
 [[ $EUID == 0 ]] || { echo 'Utilisation : sudo bash installation.sh [ADRESSE_IP] [UTILISATEUR_BUREAU]' >&2; exit 1; }
 # shellcheck source=deploy/lib.sh
 source deploy/lib.sh
+# shellcheck source=deploy/network-lib.sh
+source deploy/network-lib.sh
 sb_platform
 sb_require_tty
 project=$(pwd)
 station_ip=${1:-}
 desktop_user=${2:-${SUDO_USER:-}}
 echo '=== Station Blanche v2 — installation interactive ==='
+# Avant apt et avant toute récupération de clé Docker : le réseau peut être réparé sans téléchargement.
+bash deploy/network.sh
 missing=()
 for package in "${SB_REQUIRED_PACKAGES[@]}"; do
     if sb_installed "$package"; then echo "[OK] $package"; else missing+=("$package"); fi
@@ -25,8 +31,14 @@ for required in "${SB_REQUIRED_COMMANDS[@]}"; do
     command -v "$required" >/dev/null || { echo "Commande requise absente après installation : $required" >&2; exit 1; }
 done
 if [[ -z "$station_ip" ]]; then
-    if [[ -f .env ]]; then station_ip=$(sed -n 's/^STATION_IP=//p' .env | head -n 1); fi
-    if [[ -z "$station_ip" ]]; then station_ip=$(ip -4 -o addr show scope global | awk 'NR==1 {split($4,a,"/");print a[1]}'); fi
+    if [[ -f .env ]]; then
+        candidate=$(sed -n 's/^STATION_IP=//p' .env | head -n 1)
+        if ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$candidate"; then station_ip=$candidate; fi
+    fi
+    if [[ -z "$station_ip" ]]; then
+        primary_interface=$(sb_default_interface)
+        station_ip=$(ip -4 -o addr show dev "$primary_interface" scope global | awk 'NR==1 {split($4,a,"/");print a[1]}')
+    fi
     printf 'Adresse IPv4 de la station [%s] : ' "$station_ip" >&3
     IFS= read -r answer <&3
     station_ip=${answer:-$station_ip}
@@ -35,8 +47,15 @@ sb_ipv4 "$station_ip" || { echo 'Adresse IPv4 invalide.' >&2; exit 1; }
 ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$station_ip" || { echo 'Cette adresse ne correspond pas à une interface de la machine.' >&2; exit 1; }
 
 docker_repository() {
+    local key_tmp
+    sb_network_check
     install -m 0755 -d /etc/apt/keyrings
-    curl --fail --silent --show-error --location https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+    key_tmp=$(mktemp /etc/apt/keyrings/.docker.XXXXXXXX)
+    if ! sb_fetch https://download.docker.com/linux/debian/gpg "$key_tmp"; then rm -f -- "$key_tmp"; return 1; fi
+    if ! grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$key_tmp"; then
+        rm -f -- "$key_tmp"; echo 'Clé Docker reçue invalide ; ancienne clé conservée.' >&2; return 1
+    fi
+    mv -f -- "$key_tmp" /etc/apt/keyrings/docker.asc
     chmod 0644 /etc/apt/keyrings/docker.asc
     cat > /etc/apt/sources.list.d/docker.sources <<'EOF'
 Types: deb

@@ -2,9 +2,9 @@
 # Fonctions partagées ; ce fichier n'exécute aucune installation lorsqu'il est sourcé.
 # Lues également par les scripts qui sourcent ce fichier.
 # shellcheck disable=SC2034
-SB_REQUIRED_PACKAGES=(ca-certificates curl git udev util-linux exfatprogs iproute2 coreutils)
+SB_REQUIRED_PACKAGES=(ca-certificates curl git udev util-linux exfatprogs iproute2 iputils-ping coreutils)
 # shellcheck disable=SC2034
-SB_REQUIRED_COMMANDS=(curl git udevadm mount umount mountpoint findmnt blkid lsblk ip realpath sha256sum base64 timeout systemctl)
+SB_REQUIRED_COMMANDS=(curl git udevadm mount umount mountpoint findmnt blkid lsblk ip ping getent realpath sha256sum base64 timeout systemctl)
 
 sb_installed() {
     [[ $(dpkg-query -W -f='${Status}' "$1" 2>/dev/null) == 'install ok installed' ]]
@@ -51,5 +51,6 @@ sb_ipv4() {
         [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
         (( 10#$octet <= 255 )) || return 1
     done
+    (( 10#${octets[0]} < 224 )) || return 1
     [[ "$value" != 0.* && "$value" != 127.* ]]
 }

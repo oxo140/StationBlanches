@@ -3,6 +3,8 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # shellcheck source=deploy/lib.sh
 source deploy/lib.sh
+# shellcheck source=deploy/network-lib.sh
+source deploy/network-lib.sh
 failed=0
 check() {
     local label=$1
@@ -10,6 +12,7 @@ check() {
     if "$@"; then printf '[OK] %s\n' "$label"; else printf '[MANQUANT] %s\n' "$label"; failed=1; fi
 }
 check 'Debian 13 amd64' sb_platform
+check 'Internet IPv4, DNS et HTTPS' sb_network_check
 for package in "${SB_REQUIRED_PACKAGES[@]}"; do check "Paquet $package" sb_installed "$package"; done
 for command in "${SB_REQUIRED_COMMANDS[@]}"; do
     if command -v "$command" >/dev/null; then

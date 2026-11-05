@@ -1,0 +1,103 @@
+#!/bin/bash
+set -Eeuo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# shellcheck source=deploy/lib.sh
+source deploy/lib.sh
+# shellcheck source=deploy/network-lib.sh
+source deploy/network-lib.sh
+
+if [[ "${1:-}" == --check ]]; then sb_network_check; exit $?; fi
+if [[ "${1:-}" == --activate-nm ]]; then
+    [[ $EUID == 0 && $# == 3 && "$2" =~ ^[a-fA-F0-9-]+$ && "$3" =~ ^[a-zA-Z0-9_.-]+$ ]] || exit 1
+    nmcli --wait 30 connection up uuid "$2" ifname "$3"
+    sb_network_check
+    exit $?
+fi
+[[ $EUID == 0 ]] || { echo 'Utilisation : sudo bash deploy/network.sh [--check]' >&2; exit 1; }
+sb_platform
+sb_require_tty
+command -v ip >/dev/null || { echo 'iproute2 absent. Configurer la connexion dans les paramètres réseau Debian avant installation.' >&2; exit 1; }
+
+while true; do
+    interface=$(sb_default_interface)
+    ip -br -4 address show
+    printf 'Interface à utiliser [%s] : ' "$interface" >&3
+    IFS= read -r answer <&3
+    interface=${answer:-$interface}
+    [[ "$interface" =~ ^[a-zA-Z0-9_.-]+$ && "$interface" != lo ]] || { echo 'Interface invalide.' >&2; exit 1; }
+    ip link show dev "$interface" >/dev/null || exit 1
+    echo '1) Conserver la configuration actuelle (DHCP si déjà actif) — défaut'
+    echo '2) Passer en DHCP automatique'
+    echo '3) Définir une IPv4 manuelle'
+    echo '4) Modifier uniquement les DNS, en conservant le mode IP actuel'
+    printf 'Choix [1] : ' >&3
+    IFS= read -r choice <&3
+    choice=${choice:-1}
+    address=''; gateway=''; dns=''
+    case "$choice" in
+        1)
+            if sb_network_check; then exit 0; fi
+            sb_ask 'Corriger la configuration réseau maintenant ?' || exit 1
+            continue
+            ;;
+        2) mode=auto ;;
+        3)
+            mode=manual
+            printf 'Adresse IPv4 avec préfixe (exemple 192.168.1.50/24) : ' >&3
+            IFS= read -r address <&3
+            sb_cidr4 "$address" || { echo 'Adresse / préfixe invalide.' >&2; continue; }
+            printf 'Passerelle IPv4 : ' >&3
+            IFS= read -r gateway <&3
+            sb_ipv4 "$gateway" || { echo 'Passerelle invalide.' >&2; continue; }
+            ;;
+        4) mode=dns ;;
+        *) echo 'Choix invalide.'; continue ;;
+    esac
+    printf 'DNS IPv4 séparés par des espaces (ex. 1.1.1.1 8.8.8.8%s) : ' "$([[ "$mode" == auto ]] && printf ', vide = DNS DHCP' || true)" >&3
+    IFS= read -r dns <&3
+    if [[ -n "$dns" ]]; then
+        sb_dns4 "$dns" || { echo 'Liste DNS invalide (1 à 3 adresses IPv4).' >&2; continue; }
+    elif [[ "$mode" != auto ]]; then
+        echo 'Des DNS sont requis pour une adresse manuelle ou une correction DNS.' >&2; continue
+    fi
+    echo "Interface : $interface ; mode : $mode ; adresse : ${address:-inchangée / DHCP} ; passerelle : ${gateway:-inchangée / DHCP} ; DNS : ${dns:-DHCP}."
+    echo 'Le changement peut couper cette connexion. Sans confirmation, retour à la configuration précédente après 180 secondes.'
+    sb_ask 'Appliquer cette configuration ?' N || continue
+
+    uuid=''
+    if command -v nmcli >/dev/null; then uuid=$(nmcli -g GENERAL.CON-UUID device show "$interface" 2>/dev/null || true); fi
+    if [[ "$uuid" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9-]+$ ]]; then
+        name="Station-Blanche-$interface-$(date +%s)-$RANDOM"
+        nmcli connection clone uuid "$uuid" "$name"
+        clone=$(nmcli -g connection.uuid connection show id "$name")
+        nmcli connection modify uuid "$clone" connection.autoconnect no
+        if [[ "$mode" == manual ]]; then
+            nmcli connection modify uuid "$clone" ipv4.method manual ipv4.addresses "$address" ipv4.gateway "$gateway"
+        elif [[ "$mode" == auto ]]; then
+            nmcli connection modify uuid "$clone" ipv4.method auto ipv4.addresses '' ipv4.gateway '' ipv4.ignore-auto-routes no
+        fi
+        if [[ -n "$dns" ]]; then
+            nmcli connection modify uuid "$clone" ipv4.ignore-auto-dns yes ipv4.dns "$dns" ipv4.dns-priority -42
+        else
+            nmcli connection modify uuid "$clone" ipv4.ignore-auto-dns no ipv4.dns '' ipv4.dns-priority 0
+        fi
+        echo 'Après le diagnostic, saisir Yes dans la confirmation NetworkManager pour conserver la nouvelle configuration.'
+        if LC_ALL=C nmcli device checkpoint --timeout 180 "$interface" -- bash "$PWD/deploy/network.sh" --activate-nm "$clone" "$interface" <&3; then :; fi
+        active=$(nmcli -g GENERAL.CON-UUID device show "$interface" 2>/dev/null || true)
+        if [[ "$active" == "$clone" ]] && sb_network_check; then
+            nmcli connection modify uuid "$clone" connection.autoconnect yes connection.autoconnect-priority 999
+            echo "[OK] Configuration conservée. Profil précédent disponible : $uuid"
+            exit 0
+        fi
+        nmcli --wait 30 connection up uuid "$uuid" ifname "$interface" || true
+        nmcli connection delete uuid "$clone"
+        echo 'Nouvelle configuration non validée ; profil précédent réactivé.' >&2
+    elif command -v ifquery >/dev/null && ifquery --state "$interface" >/dev/null 2>&1; then
+        if bash deploy/network-ifupdown.sh "$interface" "$mode" "$address" "$gateway" "$dns"; then exit 0; fi
+    else
+        echo 'Interface non gérée par NetworkManager ni par un profil ifupdown actif. Aucune configuration modifiée.' >&2
+        echo 'Configurer cette interface dans Debian, puis relancer deploy/network.sh --check.' >&2
+        exit 1
+    fi
+    sb_ask 'Réessayer la configuration ?' || exit 1
+done
