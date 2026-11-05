@@ -10,54 +10,57 @@ if [[ "${1:-}" == --network ]]; then exec bash deploy/network.sh; fi
 source deploy/lib.sh
 # shellcheck source=deploy/network-lib.sh
 source deploy/network-lib.sh
+# shellcheck source=deploy/apt-lib.sh
+source deploy/apt-lib.sh
 sb_platform
 sb_require_tty
 project=$(pwd)
 station_ip=${1:-}
-desktop_user=${2:-${SUDO_USER:-}}
-echo '=== Station Blanche v2 — installation interactive ==='
-# Avant apt et avant toute récupération de clé Docker : le réseau peut être réparé sans téléchargement.
-bash deploy/network.sh
-missing=()
-for package in "${SB_REQUIRED_PACKAGES[@]}"; do
-    if sb_installed "$package"; then echo "[OK] $package"; else missing+=("$package"); fi
-done
-if (( ${#missing[@]} )); then
-    sb_ask "Installer les dépendances requises manquantes : ${missing[*]} ?" || { echo 'Installation arrêtée : prérequis requis.' >&2; exit 1; }
-    apt-get update
-    apt-get install -y "${missing[@]}"
-fi
+desktop_user=$(sb_desktop_user "${2:-}" || true)
+[[ -n "$desktop_user" && "$desktop_user" != root ]] || {
+    echo 'Impossible de choisir un compte bureau non root sans ambiguïté. Lancer via sudo depuis ce compte, ou préciser : sudo bash installation.sh ADRESSE_IP UTILISATEUR.' >&2
+    exit 1
+}
+user_home=$(getent passwd "$desktop_user" | cut -d: -f6)
+desktop_group=$(id -gn "$desktop_user")
+echo '=== Station Blanche v2 — installation automatique ==='
+echo "[OK] Compte bureau : $desktop_user"
+# Seule option demandée : passer du réseau actuel (DHCP par défaut) à une IPv4 manuelle.
+bash deploy/network.sh --install
+sb_apt_install_missing "${SB_REQUIRED_PACKAGES[@]}"
 for required in "${SB_REQUIRED_COMMANDS[@]}"; do
     command -v "$required" >/dev/null || { echo "Commande requise absente après installation : $required" >&2; exit 1; }
 done
 if [[ -z "$station_ip" ]]; then
-    if [[ -f .env ]]; then
-        candidate=$(sed -n 's/^STATION_IP=//p' .env | head -n 1)
-        if ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$candidate"; then station_ip=$candidate; fi
-    fi
-    if [[ -z "$station_ip" ]]; then
-        primary_interface=$(sb_default_interface)
-        station_ip=$(ip -4 -o addr show dev "$primary_interface" scope global | awk 'NR==1 {split($4,a,"/");print a[1]}')
-    fi
-    printf 'Adresse IPv4 de la station [%s] : ' "$station_ip" >&3
-    IFS= read -r answer <&3
-    station_ip=${answer:-$station_ip}
+    primary_interface=$(sb_default_interface)
+    station_ip=$(ip -4 -o addr show dev "$primary_interface" scope global | awk 'NR==1 {split($4,a,"/");print a[1]}')
 fi
-sb_ipv4 "$station_ip" || { echo 'Adresse IPv4 invalide.' >&2; exit 1; }
-ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$station_ip" || { echo 'Cette adresse ne correspond pas à une interface de la machine.' >&2; exit 1; }
+sb_ipv4 "$station_ip" || { echo 'Aucune IPv4 valide détectée. Vérifier le bail DHCP et la route par défaut.' >&2; exit 1; }
+ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$station_ip" || { echo 'Adresse demandée non présente sur la machine.' >&2; exit 1; }
+echo "[OK] IPv4 détectée pour la station : $station_ip (aucune saisie nécessaire en DHCP)."
 
 docker_repository() {
-    local key_tmp
+    local key_tmp existing
+    existing=$(sb_apt_docker_sources)
+    if [[ -n "$existing" ]]; then
+        echo "[OK] Sources Docker déjà présentes : $existing"
+        sb_apt_refresh
+        sb_apt_candidate docker-ce || { echo 'Source Docker active mais paquet docker-ce indisponible : vérifier sa suite trixie, sa clé et les erreurs APT. Aucune source dupliquée.' >&2; return 1; }
+        return 0
+    fi
+    [[ ! -e /etc/apt/sources.list.d/station-blanche-docker.sources ]] || { echo 'Fichier station-blanche-docker.sources préexistant non actif : vérifier ce fichier avant de continuer.' >&2; return 1; }
     sb_network_check
     install -m 0755 -d /etc/apt/keyrings
-    key_tmp=$(mktemp /etc/apt/keyrings/.docker.XXXXXXXX)
-    if ! sb_fetch https://download.docker.com/linux/debian/gpg "$key_tmp"; then rm -f -- "$key_tmp"; return 1; fi
-    if ! grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$key_tmp"; then
-        rm -f -- "$key_tmp"; echo 'Clé Docker reçue invalide ; ancienne clé conservée.' >&2; return 1
+    if [[ -s /etc/apt/keyrings/docker.asc ]] && grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' /etc/apt/keyrings/docker.asc; then
+        echo '[OK] Clé Docker déjà présente.'
+    else
+        key_tmp=$(mktemp /etc/apt/keyrings/.docker.XXXXXXXX)
+        if ! sb_fetch https://download.docker.com/linux/debian/gpg "$key_tmp"; then rm -f -- "$key_tmp"; return 1; fi
+        if ! grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$key_tmp"; then rm -f -- "$key_tmp"; echo 'Clé Docker reçue invalide ; ancienne clé conservée.' >&2; return 1; fi
+        mv -f -- "$key_tmp" /etc/apt/keyrings/docker.asc
+        chmod 0644 /etc/apt/keyrings/docker.asc
     fi
-    mv -f -- "$key_tmp" /etc/apt/keyrings/docker.asc
-    chmod 0644 /etc/apt/keyrings/docker.asc
-    cat > /etc/apt/sources.list.d/docker.sources <<'EOF'
+    cat > /etc/apt/sources.list.d/station-blanche-docker.sources <<'EOF'
 Types: deb
 URIs: https://download.docker.com/linux/debian
 Suites: trixie
@@ -65,19 +68,18 @@ Components: stable
 Architectures: amd64
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-    chmod 0644 /etc/apt/sources.list.d/docker.sources
-    apt-get update
+    chmod 0644 /etc/apt/sources.list.d/station-blanche-docker.sources
+    SB_APT_REFRESHED=0
+    sb_apt_refresh
 }
 if ! command -v docker >/dev/null; then
-    sb_ask 'Installer Docker Engine et les plugins Compose/Buildx (requis) ?' || exit 1
     for conflicting in docker.io docker-compose podman-docker containerd runc; do
-        if sb_installed "$conflicting"; then
-            echo "Paquet $conflicting déjà présent : résoudre sa migration Docker avant de poursuivre. Aucun paquet supprimé." >&2; exit 1
-        fi
+        if sb_installed "$conflicting"; then echo "Paquet $conflicting déjà présent mais commande Docker absente : réparer cette installation avant de poursuivre. Aucun paquet supprimé." >&2; exit 1; fi
     done
     docker_repository
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    sb_apt_install_missing docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 else
+    echo '[OK] Docker déjà présent : moteur existant conservé.'
     plugins=()
     if ! docker compose version >/dev/null 2>&1; then
         if sb_installed docker.io; then plugins+=(docker-compose); else plugins+=(docker-compose-plugin); fi
@@ -86,37 +88,28 @@ else
         if sb_installed docker.io; then plugins+=(docker-buildx); else plugins+=(docker-buildx-plugin); fi
     fi
     if (( ${#plugins[@]} )); then
-        sb_ask "Installer les plugins Docker manquants : ${plugins[*]} ?" || exit 1
-        if sb_installed docker.io; then apt-get update; else docker_repository; fi
-        apt-get install -y "${plugins[@]}"
+        if ! sb_installed docker.io; then docker_repository; fi
+        sb_apt_install_missing "${plugins[@]}"
     fi
 fi
 docker compose version
 docker buildx version
-if ! systemctl is-enabled --quiet docker || ! systemctl is-active --quiet docker; then
-    sb_ask 'Activer et démarrer Docker (requis) ?' || exit 1
-    systemctl enable --now docker
-fi
+systemctl enable --now docker
 docker info --format 'Docker prêt : {{.ServerVersion}}'
-if ! command -v xfce4-session >/dev/null && ! command -v gnome-session >/dev/null && ! command -v startplasma-x11 >/dev/null && ! command -v startlxqt >/dev/null; then
-    if sb_ask 'Installer un bureau Xfce et LightDM ?' N; then
-        apt-get update
-        apt-get install -y xfce4 lightdm
-        echo 'Le bureau sera disponible après ouverture de session / redémarrage.'
-    fi
+has_desktop=0
+for session in xfce4-session gnome-session startplasma-x11 startplasma-wayland startlxqt lxsession mate-session cinnamon-session; do
+    if command -v "$session" >/dev/null; then has_desktop=1; break; fi
+done
+if (( ! has_desktop )); then sb_apt_install_missing xfce4 lightdm; else echo '[OK] Bureau existant conservé.'; fi
+sb_apt_install_missing chromium openssh-server jq
+if ! command -v chromium >/dev/null; then
+    echo '[RÉPARATION] Paquet Chromium présent mais commande absente.'
+    sb_apt_refresh
+    DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y chromium
 fi
-if sb_ask "Installer / vérifier Chromium pour l'écran local en plein écran ?"; then
-    if ! sb_installed chromium; then apt-get update; apt-get install -y chromium; fi
-    if sb_ask 'Configurer son lancement automatique à la connexion du bureau ?'; then
-        printf 'Utilisateur du bureau [%s] : ' "$desktop_user" >&3
-        IFS= read -r answer <&3
-        desktop_user=${answer:-$desktop_user}
-        [[ -n "$desktop_user" && "$desktop_user" != root ]] || { echo 'Un compte bureau non root est requis pour le kiosque.' >&2; exit 1; }
-        user_home=$(getent passwd "$desktop_user" | cut -d: -f6)
-        [[ -n "$user_home" ]] || { echo 'Utilisateur inconnu.' >&2; exit 1; }
-        desktop_group=$(id -gn "$desktop_user")
-        install -d -o "$desktop_user" -g "$desktop_group" -m 0755 "$user_home/.config/autostart"
-        cat > "$user_home/.config/autostart/station-blanche.desktop" <<'EOF'
+chromium --version
+install -d -o "$desktop_user" -g "$desktop_group" -m 0755 "$user_home/.config/autostart"
+cat > "$user_home/.config/autostart/station-blanche.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Station Blanche
@@ -124,18 +117,9 @@ Exec=chromium --kiosk --no-first-run http://127.0.0.1:8080/?kiosk=1
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
-        chown "$desktop_user:$desktop_group" "$user_home/.config/autostart/station-blanche.desktop"
-        chmod 0644 "$user_home/.config/autostart/station-blanche.desktop"
-    fi
-fi
-if sb_ask "Installer / activer un serveur SSH pour l'administration distante ?" N; then
-    if ! sb_installed openssh-server; then apt-get update; apt-get install -y openssh-server; fi
-    systemctl enable --now ssh
-fi
-if sb_ask 'Installer / vérifier jq pour les tests automatiques USB et des KPI ?'; then
-    if ! sb_installed jq; then apt-get update; apt-get install -y jq; fi
-fi
-sb_ask 'Configurer le montage USB automatique en lecture seule (requis) ?' || exit 1
+chown "$desktop_user:$desktop_group" "$user_home/.config/autostart/station-blanche.desktop"
+chmod 0644 "$user_home/.config/autostart/station-blanche.desktop"
+systemctl enable --now ssh
 install -d -m 0755 /usr/local/lib/station-blanche
 install -m 0755 deploy/host/prepare-media.sh deploy/host/mount-usb.sh /usr/local/lib/station-blanche/
 install -m 0644 deploy/host/*.service /etc/systemd/system/
@@ -163,18 +147,12 @@ else
     echo '[OK] Mot de passe HTTPS existant conservé.'
 fi
 bash deploy/check-dependencies.sh
-if sb_ask 'Construire et démarrer les conteneurs maintenant ?'; then
-    docker compose up -d --build
-    docker compose ps
-    bash deploy/check-dependencies.sh
-    echo 'La première récupération des signatures peut prendre plusieurs minutes.'
-    if sb_ask 'Attendre le moteur puis lancer les tests sain / EICAR ?' N; then
-        bash deploy/test-antivirus.sh --engine --wait 900
-    fi
-else
-    echo 'Configuration prête. Démarrage ultérieur : sudo docker compose up -d --build'
-fi
-echo "Installation préparée : $project"
+docker compose up -d --build
+docker compose ps
+bash deploy/check-dependencies.sh
+echo 'Attente des signatures et tests automatiques sain / EICAR (jusqu’à 15 minutes au premier démarrage).'
+bash deploy/test-antivirus.sh --engine --wait 900
+echo "Installation terminée : $project"
 echo 'Interface locale : http://127.0.0.1:8080/?kiosk=1'
 echo "Administration : https://$station_ip (admin). Installer le certificat local : voir README.md."
 echo 'Retirer puis réinsérer les clés déjà montées par le bureau avant installation.'

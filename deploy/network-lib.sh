@@ -4,6 +4,17 @@ sb_default_interface() {
     ip -4 route show default | awk 'NR==1 {for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1);exit}}'
 }
 
+# Le checkpoint NetworkManager ne reçoit Yes qu'après validation du nouveau réseau.
+sb_nm_auto_confirm() {
+    local marker=$1 decision deadline=$((SECONDS+150))
+    while [[ ! -s "$marker" ]] && (( SECONDS < deadline )); do sleep 0.2; done
+    if [[ -s "$marker" ]] && IFS= read -r decision < "$marker" && [[ "$decision" == Yes ]]; then
+        printf 'Yes\n'
+    else
+        printf 'No\n'
+    fi
+}
+
 sb_cidr4() {
     local value=$1 prefix=${1##*/}
     [[ "$value" == */* && "$prefix" =~ ^([1-9]|[12][0-9]|3[0-2])$ ]] || return 1

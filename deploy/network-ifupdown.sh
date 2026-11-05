@@ -8,9 +8,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source deploy/lib.sh
 # shellcheck source=deploy/network-lib.sh
 source deploy/network-lib.sh
-[[ $EUID == 0 && $# == 5 ]] || exit 1
+[[ $EUID == 0 && ( $# == 5 || $# == 6 ) ]] || exit 1
 sb_require_tty
 interface=$1; mode=$2; address=$3; gateway=$4; dns=$5
+confirmation=${6:-interactive}
+[[ "$confirmation" == auto || "$confirmation" == interactive ]] || exit 1
 [[ "$interface" =~ ^[a-zA-Z0-9_.-]+$ && "$interface" != lo ]] || exit 1
 [[ "$mode" == auto || "$mode" == manual || "$mode" == dns ]] || exit 1
 if [[ "$mode" == manual ]]; then sb_cidr4 "$address"; sb_ipv4 "$gateway"; fi
@@ -134,7 +136,8 @@ if [[ -f /etc/dhcpcd.enter-hook ]]; then
 else
     install -m 0644 "$state/dhcpcd-new" /etc/dhcpcd.enter-hook
 fi
-if timeout 45 ifup --force "$interface" && sb_network_check && sb_ask 'Conserver cette configuration (avant expiration du délai de 180 secondes) ?' N; then
+if timeout 45 ifup --force "$interface" && sb_network_check; then
+    if [[ "$confirmation" != auto ]] && ! sb_ask 'Conserver cette configuration (avant expiration du délai de 180 secondes) ?' N; then restore_on_error; fi
     if (( SECONDS >= deadline )) || ! systemctl is-active --quiet "$unit.timer"; then restore_on_error; fi
     systemctl stop "$unit.timer"
     # Le timer doit encore être en attente : ne pas valider si une restauration a déjà démarré.

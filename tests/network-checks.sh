@@ -16,10 +16,16 @@ done
 temp_dir=$(mktemp -d)
 # shellcheck disable=SC2329
 cleanup() {
-    rm -f "$temp_dir/profile" "$temp_dir/manual" "$temp_dir/auto" "$temp_dir/dns" "$temp_dir/ip" "$temp_dir/ping" "$temp_dir/getent" "$temp_dir/timeout" "$temp_dir/curl"
+    rm -f "$temp_dir/profile" "$temp_dir/manual" "$temp_dir/auto" "$temp_dir/dns" "$temp_dir/ip" "$temp_dir/ping" "$temp_dir/getent" "$temp_dir/timeout" "$temp_dir/curl" "$temp_dir/confirmation"
     rmdir "$temp_dir"
 }
 trap cleanup EXIT
+printf 'Yes\n' > "$temp_dir/confirmation"
+[[ $(sb_nm_auto_confirm "$temp_dir/confirmation") == Yes ]]
+printf 'No\n' > "$temp_dir/confirmation"
+[[ $(sb_nm_auto_confirm "$temp_dir/confirmation") == No ]]
+printf 'invalid\n' > "$temp_dir/confirmation"
+[[ $(sb_nm_auto_confirm "$temp_dir/confirmation") == No ]]
 cat > "$temp_dir/profile" <<'EOF'
 auto lo
 iface lo inet loopback

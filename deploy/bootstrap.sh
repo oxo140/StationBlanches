@@ -27,11 +27,9 @@ for package in git ca-certificates; do
     if [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null) != 'install ok installed' ]]; then missing+=("$package"); fi
 done
 if (( ${#missing[@]} )); then
-    printf 'Installer les prérequis de téléchargement (%s) ? [O/n] : ' "${missing[*]}" >&3
-    IFS= read -r answer <&3
-    case "${answer,,}" in ''|o|oui|y|yes) ;; *) echo 'Installation annulée.'; exit 1 ;; esac
-    apt-get update
-    apt-get install -y "${missing[@]}"
+    printf '[INSTALLATION] Prérequis manquants : %s\n' "${missing[*]}"
+    apt-get -o APT::Update::Error-Mode=any update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 fi
 [[ ! -L "$target" ]] || { echo 'Le répertoire cible ne doit pas être un lien symbolique.' >&2; exit 1; }
 if [[ -e "$target" ]]; then
@@ -39,9 +37,8 @@ if [[ -e "$target" ]]; then
     [[ $(git -C "$target" remote get-url origin) == "$repo" ]] || { echo 'Dépôt existant différent : arrêt.' >&2; exit 1; }
     [[ $(git -C "$target" branch --show-current) == "$branch" ]] || { echo 'Branche existante différente : arrêt.' >&2; exit 1; }
     [[ -z $(git -C "$target" status --porcelain) ]] || { echo 'Modifications locales présentes : arrêt pour les conserver.' >&2; exit 1; }
-    printf 'Mettre à jour les sources dans %s ? [O/n] : ' "$target" >&3
-    IFS= read -r answer <&3
-    case "${answer,,}" in ''|o|oui|y|yes) git -C "$target" pull --ff-only ;; n|non|no) ;; *) echo 'Réponse invalide.' >&2; exit 1 ;; esac
+    echo "[OK] Sources déjà présentes : $target ; mise à jour sans recréer le dépôt."
+    git -C "$target" pull --ff-only
 else
     git clone --depth 1 --branch "$branch" "$repo" "$target"
 fi
