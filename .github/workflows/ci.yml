@@ -17,8 +17,9 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: bash -n installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh
-      - run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - run: shellcheck installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck clamav-daemon netcat-openbsd
+      - run: shellcheck installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh tests/*.sh
+      - run: bash tests/clamd-integration.sh
       - run: node --check web/app.js
   containers:
     runs-on: ubuntu-latest

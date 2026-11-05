@@ -173,6 +173,39 @@ mod tests {
     use std::{net::TcpListener, path::PathBuf};
 
     #[test]
+    #[ignore = "nécessite le démon ClamAV de tests/clamd-integration.sh"]
+    fn real_clamav_detects_a_harmless_custom_signature() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let config = Config {
+            listen: String::new(),
+            media: PathBuf::new(),
+            database: PathBuf::new(),
+            quarantine: PathBuf::new(),
+            update_status: PathBuf::new(),
+            clamd: std::env::var("SB_TEST_CLAMD")?,
+            max_file_bytes: 104857600,
+            max_update_age: 86400,
+        };
+        let path = temp.path().join("fixture");
+        fs::write(&path, b"ordinary harmless content")?;
+        assert_eq!(
+            scan(&config, &mut File::open(&path)?)?.detection,
+            Detection::Clear
+        );
+        fs::write(&path, b"ST-BLANCHE-CI-FIXTURE")?;
+        let result = scan(&config, &mut File::open(&path)?)?;
+        assert!(
+            matches!(result.detection,Detection::Threat(ref name) if name.starts_with("StationBlanche.Test"))
+        );
+        let id = crate::scanner::quarantine(temp.path(), &mut File::open(&path)?, &result.sha256)?;
+        assert_eq!(
+            fs::read(temp.path().join(format!("{id}.bin")))?,
+            fs::read(path)?
+        );
+        Ok(())
+    }
+
+    #[test]
     fn streams_all_bytes_and_hashes_the_exact_scanned_content() -> Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let address = listener.local_addr()?.to_string();

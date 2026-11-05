@@ -3,6 +3,8 @@ set -Eeuo pipefail
 umask 022
 daemon_pid=""
 updater_pid=""
+# Appelée par trap.
+# shellcheck disable=SC2329
 cleanup() {
     trap - EXIT TERM INT
     [[ -z "$daemon_pid" ]] || kill "$daemon_pid" 2>/dev/null || true

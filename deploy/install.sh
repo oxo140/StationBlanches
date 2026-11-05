@@ -9,7 +9,12 @@ desktop_user=${2:-${SUDO_USER:-}}
 IFS=. read -r -a octets <<< "$ip"
 [[ ${#octets[@]} == 4 ]] || { echo "IPv4 invalide" >&2; exit 1; }
 for octet in "${octets[@]}"; do
-    [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] && (( 10#$octet <= 255 )) || { echo "IPv4 invalide" >&2; exit 1; }
+    if [[ ! "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]]; then
+        echo "IPv4 invalide" >&2; exit 1
+    fi
+    if (( 10#$octet > 255 )); then
+        echo "IPv4 invalide" >&2; exit 1
+    fi
 done
 [[ "$ip" != 0.* && "$ip" != 127.* ]] || { echo "Utilisez l'adresse du réseau local" >&2; exit 1; }
 ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$ip" || { echo "Cette adresse n'appartient pas à la machine" >&2; exit 1; }
@@ -58,7 +63,7 @@ if [[ ! -s secrets/admin.caddy ]]; then
     [[ ${#password} -ge 16 && "$password" == "$confirm" ]] || { echo "Mot de passe trop court ou différent" >&2; exit 1; }
     hash=$(printf '%s' "$password" | docker run --rm -i caddy:2 caddy hash-password)
     unset password confirm
-    [[ "$hash" == '$2'* ]] || { echo "Hachage du mot de passe invalide" >&2; exit 1; }
+    [[ "$hash" == \$2* ]] || { echo "Hachage du mot de passe invalide" >&2; exit 1; }
     printf 'basic_auth {\n    admin %s\n}\n' "$hash" > secrets/admin.caddy
     chmod 0600 secrets/admin.caddy
 fi
