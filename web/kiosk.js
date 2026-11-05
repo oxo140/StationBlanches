@@ -34,7 +34,7 @@ async function refresh() {
   const value=JSON.stringify(state);
   if (value!==last) {render(state);last=value;}
   elapsed();
-  setTimeout(refresh,document.hidden ? 5000 : state.kind==="scanning" ? 1000 : 2000);
+  setTimeout(refresh,document.hidden ? 5000 : 1000);
 }
 $("fullscreen").addEventListener("click",()=>{
   const operation=document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();

@@ -268,6 +268,7 @@ pub fn run(
             engine::health(config).ready,
             "Moteur ou signatures indisponibles en fin de scan"
         );
+        guard.check(true)?;
         Ok(())
     })();
     if let Err(error) = result {

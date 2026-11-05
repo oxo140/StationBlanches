@@ -22,7 +22,7 @@ use std::{
         Arc, RwLock,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Clone)]
@@ -37,8 +37,12 @@ struct App {
 
 fn worker(app: App, stop: Arc<AtomicBool>) {
     let mut completed = HashMap::new();
+    let mut engine_checked: Option<Instant> = None;
     while !stop.load(Ordering::Relaxed) {
-        *app.engine.write().unwrap() = engine::health(&app.config);
+        if engine_checked.is_none_or(|t| t.elapsed() >= Duration::from_secs(10)) {
+            *app.engine.write().unwrap() = engine::health(&app.config);
+            engine_checked = Some(Instant::now());
+        }
         let work = (|| -> Result<()> {
             let mounts = mounts::list(&app.config.media)?;
             completed.retain(|key, _| mounts.iter().any(|m| &m.key == key));
@@ -58,6 +62,7 @@ fn worker(app: App, stop: Arc<AtomicBool>) {
                     continue;
                 }
                 let engine = engine::health(&app.config);
+                engine_checked = Some(Instant::now());
                 *app.engine.write().unwrap() = engine.clone();
                 if !engine.ready {
                     break;
@@ -65,9 +70,14 @@ fn worker(app: App, stop: Arc<AtomicBool>) {
                 let result =
                     scanner::run(&app.config, &mount, &engine.version, &app.progress, &stop)?;
                 completed.insert(mount.key, result);
+                let latest = mounts::list(&app.config.media)?;
+                completed.retain(|key, _| latest.iter().any(|m| &m.key == key));
                 *app.present_results.write().unwrap() = completed.values().cloned().collect();
                 let mut pending = app.pending.write().unwrap();
-                *pending = pending.saturating_sub(1);
+                *pending = latest
+                    .iter()
+                    .filter(|m| !completed.contains_key(&m.key))
+                    .count();
                 drop(pending);
                 *app.progress.write().unwrap() = Progress::default();
             }
@@ -85,7 +95,7 @@ fn worker(app: App, stop: Arc<AtomicBool>) {
                 }
             }
         }
-        for _ in 0..20 {
+        for _ in 0..5 {
             if stop.load(Ordering::Relaxed) {
                 return;
             }
