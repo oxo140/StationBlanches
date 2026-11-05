@@ -35,7 +35,7 @@ grep -qi '^content-security-policy:' "$temp_dir/headers"
 app_id=$(compose ps -q app)
 web_id=$(compose ps -q web)
 # La publication du kiosque appartient au proxy, pas au réseau interne de l'application.
-[[ -z $(docker port "$app_id" 8080) ]]
+docker inspect "$app_id" | jq -e '.[0].HostConfig.PortBindings | . == null or length == 0'
 [[ $(docker port "$web_id" 8080) == 127.0.0.1:8080 ]]
 docker inspect "$app_id" | jq -e '.[0].NetworkSettings.Networks | length == 2'
 compose cp web:/data/caddy/pki/authorities/local/root.crt "$temp_dir/ca.crt"

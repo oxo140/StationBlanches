@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 limit=${1:-60}
-[[ "$limit" =~ ^[1-9][0-9]{0,3}$ ]] && (( limit<=3600 )) || { echo 'Délai de contrôle web invalide.' >&2; exit 2; }
+if [[ ! "$limit" =~ ^[1-9][0-9]{0,3}$ ]]; then echo 'Délai de contrôle web invalide.' >&2; exit 2; fi
+if (( limit>3600 )); then echo 'Délai de contrôle web invalide.' >&2; exit 2; fi
 deadline=$((SECONDS+limit))
 echo 'Vérification de la page locale http://127.0.0.1:8080/…'
 while (( SECONDS<deadline )); do
