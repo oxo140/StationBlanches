@@ -27,6 +27,19 @@ if command -v jq >/dev/null; then echo '[OPTIONNEL OK] jq'; else echo '[OPTIONNE
 if command -v xfce4-session >/dev/null; then echo '[OPTIONNEL OK] Xfce'; else echo '[OPTIONNEL ABSENT] Xfce (un autre bureau convient aussi)'; fi
 if [[ -f .env && -s secrets/admin.caddy ]]; then
     check 'Configuration Docker Compose' docker compose config --quiet
+    if docker compose ps --status running --services 2>/dev/null | grep -qx app; then
+        check 'Binaire Rust dans le conteneur' docker compose exec -T app /usr/bin/test -x /usr/local/bin/station-blanche
+        check 'Client HTTP du conteneur' docker compose exec -T app curl --version
+    else
+        echo '[À DÉMARRER] Application Docker'
+    fi
+    if docker compose ps --status running --services 2>/dev/null | grep -qx clamav; then
+        check 'ClamAV dans le conteneur' docker compose exec -T clamav clamd --version
+        check 'FreshClam dans le conteneur' docker compose exec -T clamav freshclam --version
+        check 'Client de test antivirus' docker compose exec -T clamav clamdscan --version
+    else
+        echo '[À DÉMARRER] Antivirus Docker'
+    fi
 else
     echo '[À CONFIGURER] Adresse IP et accès HTTPS (normal avant installation)'
 fi

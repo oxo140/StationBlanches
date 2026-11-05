@@ -127,9 +127,12 @@ Seul le port HTTPS 443 est publié sur l'IP choisie. Le HTTP local reste lié à
 À effectuer entre deux analyses, après un instantané ou une sauvegarde :
 
 ```bash
-git pull --ff-only
+cd /opt/station-blanche
+sudo git pull --ff-only
 sudo bash deploy/update.sh
 ```
+
+Pour un clone installé manuellement dans votre compte, utiliser `git pull --ff-only` sans sudo dans ce clone.
 
 Ce script reconstruit les images avec les paquets Debian courants et recrée les conteneurs. Les volumes `history`, `quarantine`, `signatures` et Caddy sont conservés. Les signatures sont mises à jour séparément, sans reconstruire l'application.
 

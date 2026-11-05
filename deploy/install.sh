@@ -86,7 +86,7 @@ if ! command -v xfce4-session >/dev/null && ! command -v gnome-session >/dev/nul
         echo 'Le bureau sera disponible après ouverture de session / redémarrage.'
     fi
 fi
-if sb_ask 'Installer / vérifier Chromium pour l’écran local en plein écran ?'; then
+if sb_ask "Installer / vérifier Chromium pour l'écran local en plein écran ?"; then
     if ! sb_installed chromium; then apt-get update; apt-get install -y chromium; fi
     if sb_ask 'Configurer son lancement automatique à la connexion du bureau ?'; then
         printf 'Utilisateur du bureau [%s] : ' "$desktop_user" >&3
@@ -109,7 +109,7 @@ EOF
         chmod 0644 "$user_home/.config/autostart/station-blanche.desktop"
     fi
 fi
-if sb_ask 'Installer / activer un serveur SSH pour l’administration distante ?' N; then
+if sb_ask "Installer / activer un serveur SSH pour l'administration distante ?" N; then
     if ! sb_installed openssh-server; then apt-get update; apt-get install -y openssh-server; fi
     systemctl enable --now ssh
 fi
