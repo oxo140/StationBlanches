@@ -8,6 +8,8 @@ La CI exécute formatage, Clippy et tests Rust sur Linux, puis construit les ima
 
 ## Installation et accès
 
+Le README propose une commande d'installation en une ligne. Le bootstrap récupère la branche de refonte dans `/opt/station-blanche` et l'assistant propose les composants optionnels. `sudo bash installation.sh --check` produit un diagnostic sans installation. Les tests CI des scripts vérifient la validation des adresses, les fichiers de recette, le refus d'une panne moteur ou d'un EICAR non détecté, puis les verdicts USB et l'absence de copie de quarantaine via des réponses API simulées. Le conteneur ClamAV réel est également testé avec un document sain et EICAR ; les supports physiques restent à tester ci-dessous.
+
 1. Installer sur une VM Debian 13.7 amd64 avec bureau, 4 vCPU et 8 Go RAM, USB transmis.
 2. Lancer l'installateur ; vérifier les trois services avec `docker compose ps`.
 3. Vérifier que l'écran indique un blocage jusqu'à la disponibilité des signatures, puis que `/health/ready` retourne 200.
