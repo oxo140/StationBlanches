@@ -1,81 +1,124 @@
-# 🛡️ Stations Blanches
+# Station Blanche v2 — Rust, ClamAV et Docker
 
-Ce projet est conçu pour des Stations Blanches, permettant de scanner les périphériques USB afin de garantir qu'ils sont exempts de logiciels malveillants. 
+Refonte pour **Debian 13 (Trixie), dont 13.7, amd64**, avec bureau graphique et supports USB transmis à la machine. L'application Rust expose un tableau de bord local plein écran et une supervision HTTPS accessible par l'adresse IP de la station.
 
-## 📋 Prérequis
+**Statut : version candidate à valider sur la VM.** Les tests Rust sont automatisés ; le montage USB, le moteur réel et la chaîne Docker doivent aussi passer la recette décrite dans [docs/VALIDATION.md](docs/VALIDATION.md). Les scripts Python historiques sont conservés dans `legacy/` et ne sont plus installés.
 
-- **Debian 11.8** 
-- **Environnement Gnome** 
-- Connexion Internet pour téléchargement et mise a jour de la base de hash.
-- **Désactivez la mise en veille** de votre ordinateur pour assurer un fonctionnement continu.
-- **Activez l'ouverture automatique de session** afin que les services se lancent correctement au démarrage.
-- **Il est préférable de configurer le démarrage automatique de votre machine via le BIOS pour garantir son allumage sans intervention manuelle.**
+## Fonctionnement
 
+- Détection des partitions USB par udev/systemd sur l'hôte et montage **lecture seule, nodev, nosuid, noexec** dans `/srv/station-blanche/media`.
+- Propagation des montages vers Docker : pas de conteneur privilégié, pas d'accès à `/dev`, pas de socket Docker dans l'application.
+- Client de scan Rust : lecture en blocs de 64 Kio, SHA-256 calculé pendant cette lecture, envoi INSTREAM à ClamAV. La base reste chargée en mémoire dans `clamd`.
+- Parcours des fichiers en flux, fichiers cachés inclus, sans suivre les liens. Les ouvertures Linux utilisent `openat2` pour rester dans le support analysé.
+- Les partitions sont traitées en file d'attente, une à la fois. Une réinsertion produit une nouvelle analyse. Après recréation de l'application, les supports présents sont réanalysés.
+- Recherche de nouvelles signatures toutes les **6 heures**, nouvelle tentative après **1 heure** en cas d'échec. La dernière vérification réussie doit dater de moins de **24 heures** et la version doit être chargée par ClamAV.
+- Verdicts distincts : **aucune menace détectée**, **menace détectée**, **analyse incomplète**, **interrompue**. Fichier illisible, erreur, lien, fichier spécial, limite dépassée ou déconnexion ne donnent jamais un verdict favorable.
+- Copie des fichiers détectés dans une quarantaine privée, nom aléatoire, droits `0600`, vérification SHA-256. **L'original n'est pas supprimé de la clé** : celle-ci reste potentiellement dangereuse. Aucune restauration ou ouverture des échantillons depuis le navigateur.
+- Historique SQLite et indicateurs persistants : analyses, fichiers, volumes lus, détections, partitions infectées, copies en quarantaine, analyses incomplètes et durée moyenne. Les compteurs concernent les **partitions**, pas nécessairement des clés physiques distinctes.
 
----
+ClamAV examine également les archives dans ses limites configurées. Le SHA-256 sert ici à l'intégrité et à la traçabilité, pas de moteur antivirus unique. Aucun produit ne garantit l'absence de toute menace.
 
-## 🚀 Installation
+## Préparer la VM
 
-Exécutez les commandes suivantes pour installer le projet :
+Prévoir **4 vCPU, 8 Go de RAM, 40 Go de disque minimum**, un bureau GNOME ou XFCE, une connexion Internet et une IPv4 fixe ou une réservation DHCP. Ces ressources sont une base de départ, à ajuster après mesure. Le stockage doit aussi accueillir les bases et la quarantaine.
+
+Configurer le passage USB de l'hyperviseur vers Debian. Vérifier avec `lsblk -f` que la clé apparaît **dans la VM**. Docker ne peut pas rendre visible un périphérique que la VM ne reçoit pas.
+
+Ne pas installer cette station sur le disque USB destiné aux analyses : les règles réservent les systèmes de fichiers USB à la station.
+
+## Installer
+
+Depuis un compte administrateur disposant de sudo, dans un terminal du bureau :
 
 ```bash
-sudo apt update && sudo apt install curl -y
-curl -O https://raw.githubusercontent.com/oxo140/StationBlanches/main/installation.sh
-chmod +x installation.sh
-sudo ./installation.sh
+sudo apt update
+sudo apt install -y git
+git clone https://github.com/oxo140/StationBlanches.git
+cd StationBlanches
+# Tant que la refonte n'est pas fusionnée :
+git switch codex/v2-rust-docker
+sudo bash installation.sh 192.168.1.50 "$USER"
 ```
 
----
+Remplacer l'adresse par celle de la VM. Le script vérifie Debian 13 et amd64, installe Docker via son dépôt officiel si absent, prépare systemd/udev et construit les images. Il demande un mot de passe administrateur de 16 caractères minimum et en conserve seulement le hash bcrypt. Les fichiers privés sont dans `secrets/`, exclus de Git.
 
-## 🧪 Test de la station
+Le script n'effectue pas de mise à niveau générale de Debian et n'ajoute pas d'extinction automatique. Une réinstallation conserve les données et le mot de passe existant.
 
-Pour vérifier le bon fonctionnement de la station blanche :
+Retirer puis réinsérer les clés déjà montées par le bureau avant l'installation. La première récupération des signatures peut prendre plusieurs minutes ; l'application reste bloquée tant que le moteur n'est pas prêt.
 
-1. vérifier dans Paramètres → Énergie que les paramètres sont sur aucune mise en veille.
-2. Lancer un terminal et lancé le script avec la commande python
+- Écran local : `http://127.0.0.1:8080/?kiosk=1`, lecture seule, accessible uniquement depuis la station.
+- Supervision distante : `https://192.168.1.50`, utilisateur `admin`, mot de passe choisi à l'installation.
+- Chromium se lance à la connexion au bureau si l'utilisateur a été fourni au script. L'ouverture automatique de session et la désactivation de veille restent des choix à configurer dans Debian.
+
+## Faire confiance au certificat HTTPS
+
+L'accès par IP utilise l'autorité locale de Caddy. Il faut installer **uniquement son certificat public** sur les postes d'administration :
+
 ```bash
-python3 script.py gui
+sudo docker compose cp web:/data/caddy/pki/authorities/local/root.crt ./station-blanche-ca.crt
 ```
-3. Créez un fichier texte sur une clé USB.
-4. Insérez-y une clé usb pour tester
 
+Transférer ce certificat par un canal de confiance et comparer son empreinte :
 
-📄 À propos de mb_full.txt
+```bash
+openssl x509 -in station-blanche-ca.crt -noout -fingerprint -sha256
+```
 
-C’est un dump complet de hachages SHA-256 de fichiers malveillants connu, fourni par MalwareBazaar.
+Sous Windows, importer ce certificat dans les autorités de certification racines de confiance du compte administrateur. Sous Debian, le copier dans `/usr/local/share/ca-certificates/` puis lancer `sudo update-ca-certificates`. Certains navigateurs utilisent leur propre magasin. Ne pas contourner les avertissements de certificat et ne jamais exporter `root.key`.
 
-Format : un hash SHA-256 par ligne (64 caractères hexadécimaux).
+Seul le port HTTPS 443 est publié sur l'IP choisie. Le HTTP local reste lié à `127.0.0.1` ; le port ClamAV 3310 n'est pas publié. Le réseau Docker du moteur est isolé de celui de la supervision. Ne pas rediriger le port 443 depuis Internet. Les postes locaux de la station ont accès à la supervision sans authentification via loopback : la session du kiosque doit rester réservée à cet usage.
 
-Utilisé comme liste noire : si un fichier USB a un hash qui correspond → infection.
+## Mettre à jour l'application
 
-Dautre base seront ajouté plus tard
+À effectuer entre deux analyses, après un instantané ou une sauvegarde :
 
-## 🖼️ Images
+```bash
+git pull --ff-only
+sudo bash deploy/update.sh
+```
 
-Le projet utilise des visuels pour indiquer l'état du scan USB. Ces images sont disponibles ici :
+Ce script reconstruit les images avec les paquets Debian courants et recrée les conteneurs. Les volumes `history`, `quarantine`, `signatures` et Caddy sont conservés. Les signatures sont mises à jour séparément, sans reconstruire l'application.
 
-🔗 [Images du projet](https://github.com/dbarzin/pandora-box/tree/main/images)
+Ne pas exécuter `docker compose down -v` : cela supprime les volumes. Les tags de base `rust:1-trixie`, `debian:trixie-slim` et `caddy:2` suivent les correctifs ; pour un déploiement figé, consigner et épingler leurs digests après la recette. Les dépendances Rust sont verrouillées par `Cargo.lock`.
 
-### Liste des icônes :
+Mise à jour immédiate des signatures, sans lancer deux instances concurrentes de FreshClam :
 
-- **`no_usb.png`** : Aucun périphérique USB détecté
-- **`scanning.png`** : Analyse en cours
-- **`infected.png`** : Fichier infecté détecté
-- **`clean.png`** : Clé USB sans menace
-- **`perte.png`** : Erreur ou perte de connexion USB
+```bash
+sudo docker compose restart clamav
+```
 
----
+Les analyses sont bloquées pendant le redémarrage. Une analyse active peut devenir incomplète : attendre son terme avant maintenance.
 
-## 🔄 Extinction automatique
+## Exploitation et sauvegardes
 
-- Extinction automatique du système à **22h00** pour éviter un fonctionnement prolongé inutile la nuit (modifiable via `crontab`).
+```bash
+sudo docker compose ps
+sudo docker compose logs --tail=100 app clamav web
+curl -i http://127.0.0.1:8080/health/ready
+systemctl status station-blanche-media.service
+journalctl -u 'station-blanche-usb@*' --since today
+findmnt -R /srv/station-blanche/media
+```
 
+`/health/live` vérifie que le serveur répond ; `/health/ready` retourne 503 si le moteur ou les signatures sont indisponibles. Le tableau de bord affiche la raison du blocage. Les contrôles Docker n'effectuent pas de redémarrage sur un simple état `unhealthy` : surveiller les alertes affichées.
 
-## 📊 Fichiers de Statistiques et Logs
+Pour sauvegarder, arrêter l'application et ClamAV, sauvegarder les volumes Docker, `.env` et `secrets/`, puis redémarrer. Ne pas copier un fichier SQLite en cours d'écriture en oubliant son WAL. Le volume de quarantaine contient des fichiers potentiellement dangereux : conserver des droits stricts et ne pas l'exposer au partage réseau. Aucune purge automatique n'est appliquée ; surveiller l'espace disque et définir une politique de rétention avant production.
 
-## Le projet génère deux fichiers pour suivre les activités et les infections des périphériques USB :
+## Limites de cette version candidate
 
-- NBCLE.txt : Ce fichier contient le nombre total de clés USB connectées.
+- Formats montés : FAT, exFAT, NTFS via ntfs3, ext2/3/4. Supports chiffrés et autres formats non montés automatiquement. Les permissions Unix des fichiers sont respectées ; un fichier inaccessible entraîne un résultat incomplet.
+- Limite par fichier : **100 Mio**. Limites d'archives : 256 Mio de données analysées, 10 000 fichiers et 20 niveaux ; un dépassement signalé par le moteur entraîne un résultat incomplet. Une archive chiffrée peut être signalée comme détection heuristique.
+- La quarantaine est une copie isolée et non une désinfection du support. Il faut traiter la clé séparément après une détection.
+- Administration web en lecture seule : pas de suppression, restauration, lancement de commande ou mise à jour applicative depuis le navigateur. Le module mail historique est désactivé.
+- Les 100 dernières analyses et les 500 premiers événements d'une analyse sont affichés ; les compteurs globaux utilisent tout l'historique. Les analyses du jour sont comptées en UTC, les heures affichées dans le fuseau du navigateur.
+- Docker isole les services mais pas le noyau qui monte le système de fichiers. Garder Debian à jour et utiliser une machine dédiée ; la station ne protège pas contre toutes les attaques matérielles USB.
 
-- LOG.txt : Ce fichier est utilisé pour enregistrer les événements d'infection détectée par l'antivirus ClamAV.
-        Chaque fois qu'une infection est détectée sur une clé USB, une entrée est ajoutée avec un horodatage et la description de l'infection.
+## Développer et vérifier
+
+```bash
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+```
+
+Le binaire se compile aussi sur Windows pour les tests de protocole et de persistance ; le scan USB de production nécessite Linux. Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/VALIDATION.md](docs/VALIDATION.md).

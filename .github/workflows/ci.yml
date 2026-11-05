@@ -1,0 +1,28 @@
+name: Validate v2
+on:
+  push:
+    branches: [main, codex/v2-rust-docker]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: bash -n installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: shellcheck installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh
+      - run: node --check web/app.js
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t station-blanche/app:test .
+      - run: docker build -f deploy/clamav/Dockerfile -t station-blanche/clamav:test .

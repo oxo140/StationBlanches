@@ -1,0 +1,10 @@
+*
+!Cargo.toml
+!Cargo.lock
+!src
+!src/**
+!web
+!web/**
+!deploy
+!deploy/clamav
+!deploy/clamav/**

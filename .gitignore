@@ -1,0 +1,8 @@
+/target/
+/.tools/
+/.env
+/secrets/
+/data/
+*.db
+*.db-shm
+*.db-wal

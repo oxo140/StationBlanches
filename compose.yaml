@@ -1,0 +1,106 @@
+name: station-blanche
+services:
+  app:
+    image: station-blanche/app:2.0.0
+    build: .
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 2.0
+    stop_grace_period: 3m
+    environment:
+      SB_LISTEN: 0.0.0.0:8080
+      SB_CLAMD: clamav:3310
+      SB_MEDIA: /media
+      SB_DATABASE: /data/history.db
+      SB_QUARANTINE: /quarantine
+      SB_UPDATE_STATUS: /signatures/update-status
+      RUST_LOG: station_blanche=info
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - history:/data
+      - quarantine:/quarantine
+      - signatures:/signatures:ro
+      - type: bind
+        source: /srv/station-blanche/media
+        target: /media
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks: [scan, frontend]
+    depends_on:
+      clamav:
+        condition: service_started
+    logging: &logging
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  clamav:
+    image: station-blanche/clamav:2.0.0
+    build:
+      context: .
+      dockerfile: deploy/clamav/Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 3g
+    cpus: 2.0
+    stop_grace_period: 30s
+    volumes:
+      - signatures:/var/lib/clamav
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /run/clamav:size=8m,mode=1777
+    networks: [scan, updates]
+    # Le port 3310 n'est jamais publié sur l'hôte.
+    logging: *logging
+
+  web:
+    image: caddy:2
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
+    environment:
+      STATION_IP: ${STATION_IP:?Définir STATION_IP dans .env}
+    ports:
+      - "${STATION_IP}:443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./secrets/admin.caddy:/etc/caddy/admin.caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks: [frontend, ingress]
+    depends_on: [app]
+    logging: *logging
+
+networks:
+  scan:
+    internal: true
+  frontend:
+    internal: true
+  updates: {}
+  ingress: {}
+volumes:
+  history: {}
+  quarantine: {}
+  signatures: {}
+  caddy_data: {}
+  caddy_config: {}

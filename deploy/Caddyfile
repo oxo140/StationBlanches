@@ -1,0 +1,15 @@
+{
+    admin off
+    auto_https disable_redirects
+}
+https://{$STATION_IP} {
+    tls internal
+    import /etc/caddy/admin.caddy
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    reverse_proxy app:8080
+}
