@@ -47,6 +47,7 @@ pub struct Scan {
     pub errors: u64,
     pub engine: String,
     pub quarantined: u64,
+    pub unverified_files: u64,
 }
 
 #[derive(Debug, Serialize)]

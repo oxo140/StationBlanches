@@ -3,7 +3,7 @@ import {stationView,offlineView} from "/state.js";
 const $ = id => document.getElementById(id);
 const number = value => new Intl.NumberFormat("fr-FR").format(value || 0);
 const date = value => value ? new Date(value * 1000).toLocaleString("fr-FR") : "—";
-const labels = {running:"En cours",infected:"Menace détectée",incomplete:"Analyse incomplète",interrupted:"Interrompue",no_threat_detected:"Aucune menace détectée"};
+const labels = {running:"En cours",infected:"Menace détectée",incomplete:"Analyse terminée avec réserves",interrupted:"Analyse interrompue",no_threat_detected:"Aucune menace détectée"};
 let failures = 0;
 let historyKey="";
 $("fullscreen").addEventListener("click", () => {
@@ -29,7 +29,10 @@ async function detail(id) {
     for (const event of events) {
       const row = document.createElement("div"); row.className = "finding";
       const path = document.createElement("strong"); path.textContent = event.path || "Périphérique / moteur";
-      const message = document.createElement("span"); message.textContent = event.detail;
+      const message = document.createElement("span");
+      if(event.detail.includes("Heuristics.Encrypted.")) message.textContent="Fichier ou archive protégé par mot de passe : contenu non vérifiable. Le chiffrement peut servir à dissimuler un virus et empêcher sa détection ; il ne prouve pas une infection. "+event.detail;
+      else if(/MaxFileSize|Fichier trop volumineux/.test(event.detail)) message.textContent="Fichier non vérifié : taille supérieure à la limite d’analyse, notamment possible avec une image ISO. "+event.detail;
+      else message.textContent=event.detail;
       row.append(path, message);
       if (event.quarantine_id) {
         const copy = document.createElement("code"); copy.textContent = `Copie isolée : ${event.quarantine_id} · SHA-256 : ${event.sha256}`; row.append(copy);
@@ -44,10 +47,15 @@ function history(scans) {
     const row = document.createElement("tr");
     const device = document.createElement("td");
     const link = document.createElement("button"); link.type="button"; link.textContent=`USB · ${scan.device}`; link.addEventListener("click", () => detail(scan.id)); device.append(link); row.append(device);
-    for (const value of [date(scan.started_at), number(scan.files), number(scan.threats), number(scan.quarantined), number(scan.errors)]) {
+    for (const value of [date(scan.started_at), number(scan.files), number(scan.threats), number(scan.quarantined), number(scan.unverified_files)]) {
       const cell = document.createElement("td"); cell.textContent=value; row.append(cell);
     }
-    const cell = document.createElement("td"); const badge = document.createElement("span"); badge.className=`badge ${Object.hasOwn(labels, scan.verdict) ? scan.verdict : "incomplete"}`; badge.textContent=labels[scan.verdict] || "État inconnu"; cell.append(badge); row.append(cell); $("scans").append(row);
+    const cell = document.createElement("td"); const badge = document.createElement("span"); badge.className=`badge ${Object.hasOwn(labels, scan.verdict) ? scan.verdict : "incomplete"}`;
+    const plural=scan.unverified_files>1 ? "s" : "";
+    badge.textContent=scan.verdict==="incomplete" && scan.unverified_files ? `Analyse terminée · ${number(scan.unverified_files)} fichier${plural} non vérifié${plural}` : labels[scan.verdict] || "État inconnu";
+    cell.append(badge);
+    if(scan.errors || scan.threats){const reasons=document.createElement("button");reasons.type="button";reasons.className="reasons";reasons.textContent=scan.threats ? "Voir les détections et les raisons" : "Voir les raisons";reasons.addEventListener("click",()=>detail(scan.id));cell.append(reasons);}
+    row.append(cell); $("scans").append(row);
   }
   if (!scans.length) {const row=document.createElement("tr");const cell=document.createElement("td");cell.colSpan=7;cell.textContent="Aucune analyse pour le moment. Insérez une clé USB.";row.append(cell);$("scans").append(row);}
 }

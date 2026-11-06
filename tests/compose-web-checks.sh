@@ -40,7 +40,7 @@ grep -qi '^referrer-policy: same-origin' "$temp_dir/headers"
 [[ $(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health/ready) == 503 ]]
 curl --noproxy '*' -fsS http://127.0.0.1:8080/kiosk | grep -q 'CONTRÔLE DES SUPPORTS USB'
 curl --noproxy '*' -fsS http://127.0.0.1:8080/api/live | jq -e 'has("progress") and has("pending")'
-for path in / /api/status /api/scans/1/findings /app.js; do
+for path in / /api/status /api/scans/1/findings /app.js /api/export/history.csv; do
     [[ $(curl --noproxy '*' -sS -D "$temp_dir/headers" -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080$path") == 307 ]]
     grep -Fqi "location: https://$STATION_IP$path" "$temp_dir/headers"
 done
@@ -64,6 +64,8 @@ https -D "$temp_dir/headers" -o /dev/null -c "$temp_dir/cookies" -H "Origin: htt
 grep -qi '^set-cookie: __Host-sb_session=.*Secure; HttpOnly; SameSite=Strict' "$temp_dir/headers"
 https -f -b "$temp_dir/cookies" "https://$STATION_IP/" | grep -q 'Supervision'
 https -f -b "$temp_dir/cookies" "https://$STATION_IP/api/status" | jq -e 'has("kpis")'
+https -f -b "$temp_dir/cookies" -D "$temp_dir/headers" "https://$STATION_IP/api/export/history.csv" | grep -q 'Details_et_raisons'
+grep -qi '^content-disposition: attachment;' "$temp_dir/headers"
 https -f -b "$temp_dir/cookies" -H "Origin: https://$STATION_IP" -X POST "https://$STATION_IP/auth/logout" >/dev/null
 [[ $(https -b "$temp_dir/cookies" -o /dev/null -w '%{http_code}' "https://$STATION_IP/") == 303 ]]
 echo 'Production Compose local kiosk and authenticated HTTPS checks passed'

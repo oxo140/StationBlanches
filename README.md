@@ -146,6 +146,14 @@ Diagnostic : `sudo bash deploy/check-rdp.sh`. Pour les erreurs : `sudo journalct
 
 ## Tester : fichier sain et détection antivirus
 
+### Export et résultats avec réserves
+
+Dans la supervision authentifiée, **Exporter tout l’historique · CSV** télécharge une ligne par analyse enregistrée, sans la limite des 100 lignes affichées. L'export contient dates UTC, support, compteurs, moteur, résultat, nombre de fichiers non vérifiés et tous les événements avec raisons, références de quarantaine et SHA-256 disponibles. Les détails ne sont pas limités aux 500 événements de la fenêtre web. Le CSV utilise UTF-8 avec BOM, des points-virgules, des champs protégés pour Excel/LibreOffice et un téléchargement en flux sur un instantané SQLite ; aucun historique complet n'est chargé en mémoire.
+
+Une analyse qui atteint la fin du parcours avec des erreurs de fichier affiche **Analyse terminée · N fichier(s) non vérifié(s)**, avec **Voir les raisons**. Le résultat reste orange et le support n'est pas considéré entièrement vérifié. Les archives/documents signalés comme chiffrés par ClamAV deviennent des fichiers non vérifiables, sans compter le chiffrement seul comme une menace ni déclencher une copie en quarantaine. Le message explique qu'un mot de passe peut servir à dissimuler un malware, sans être une preuve d'infection. Les fichiers trop volumineux, notamment des ISO, indiquent la limite atteinte ; ils ne sont pas ignorés silencieusement.
+
+Un retrait du support, un arrêt de maintenance ou une défaillance empêchant de terminer le parcours restent **Analyse interrompue**. Les codes techniques historiques (`incomplete`, etc.) sont conservés dans SQLite et dans une colonne dédiée du CSV ; les anciens événements ne sont pas réécrits. Le nombre de fichiers non vérifiés est déduit des chemins distincts consignés en erreur, pas du nombre total d'incidents de la station.
+
 Le test utilise le [fichier standard EICAR](https://www.eicar.org/download-anti-malware-testfile/), **pas un vrai virus**. Son contenu est généré localement et vérifié (68 octets, SHA-256), sans téléchargement d'échantillon malveillant.
 
 ### Test automatique du moteur installé

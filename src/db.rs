@@ -67,7 +67,9 @@ pub fn finding(db: &Connection, f: &Finding) -> Result<()> {
 }
 
 pub fn scans(db: &Connection) -> Result<Vec<Scan>> {
-    let mut stmt = db.prepare("SELECT id,device,started_at,finished_at,verdict,files,bytes,threats,errors,engine,quarantined FROM scans ORDER BY started_at DESC,rowid DESC LIMIT 100")?;
+    let mut stmt = db.prepare("SELECT id,device,started_at,finished_at,verdict,files,bytes,threats,errors,engine,quarantined,
+        (SELECT COUNT(DISTINCT path) FROM findings WHERE scan_id=scans.id AND kind='error' AND path!='')
+        FROM scans ORDER BY started_at DESC,rowid DESC LIMIT 100")?;
     let rows = stmt.query_map([], |r| {
         Ok(Scan {
             id: r.get(0)?,
@@ -81,6 +83,7 @@ pub fn scans(db: &Connection) -> Result<Vec<Scan>> {
             errors: r.get(8)?,
             engine: r.get(9)?,
             quarantined: r.get(10)?,
+            unverified_files: r.get(11)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -147,8 +150,10 @@ mod tests {
         let db = open(&path)?;
         assert_eq!(scans(&db)?[0].files, 7);
         assert_eq!(kpis(&db)?.quarantined, 1);
+        db.execute("INSERT INTO findings(scan_id,path,kind,detail) VALUES('legacy','locked.zip','error','encrypted'),('legacy','locked.zip','error','retry'),('legacy','','error','engine issue')", [])?;
+        assert_eq!(scans(&db)?[0].unverified_files, 1);
         let reader = read(&path)?;
-        assert_eq!(findings(&reader, "legacy")?.len(), 1);
+        assert_eq!(findings(&reader, "legacy")?.len(), 4);
         assert!(reader.execute("DELETE FROM scans", []).is_err());
         Ok(())
     }
@@ -171,6 +176,7 @@ mod tests {
                 errors: 0,
                 engine: "test".into(),
                 quarantined: 0,
+                unverified_files: 0,
             },
         )?;
         drop(db);

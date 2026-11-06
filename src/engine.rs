@@ -111,6 +111,10 @@ pub fn parse_detection(text: &str) -> Result<Detection> {
     {
         ensure!(!signature.is_empty(), "Signature vide");
         ensure!(
+            !signature.starts_with("Heuristics.Encrypted."),
+            "Fichier ou archive protégé par mot de passe : contenu chiffré non vérifiable. Le chiffrement peut servir à dissimuler un logiciel malveillant et empêcher sa détection, mais ne prouve pas une infection. Signal moteur : {signature}"
+        );
+        ensure!(
             !signature.starts_with("Heuristics.Limits."),
             "Limite interne du moteur atteinte : {signature}"
         );
@@ -154,7 +158,9 @@ impl Client {
         ensure!(before.is_file(), "Objet non régulier");
         ensure!(
             before.len() <= self.max_file_bytes,
-            "Fichier trop volumineux pour la politique de scan"
+            "Fichier trop volumineux : {} octets, limite de {} octets (1 Gio maximum). Contenu non vérifié, y compris les images ISO.",
+            before.len(),
+            self.max_file_bytes
         );
         #[cfg(target_os = "linux")]
         {
@@ -341,6 +347,8 @@ mod tests {
             "stream: OK ERROR",
             "stream: read error ERROR",
             "stream: Heuristics.Limits.Exceeded.MaxFileSize FOUND",
+            "stream: Heuristics.Encrypted.Zip FOUND",
+            "stream: Heuristics.Encrypted.PDF FOUND",
         ] {
             assert!(parse_detection(response).is_err());
         }

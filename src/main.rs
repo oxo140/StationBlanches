@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod db;
 mod engine;
+mod export;
 mod model;
 mod mounts;
 mod scanner;
@@ -131,6 +132,43 @@ async fn findings(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
 }
 
+async fn export_history(State(app): State<App>) -> Result<Response, StatusCode> {
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<String, std::io::Error>>(2);
+    let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
+    tokio::task::spawn_blocking(move || {
+        let db = match db::read(&app.config.database) {
+            Ok(db) => db,
+            Err(_) => {
+                let _ = ready_sender.send(false);
+                return;
+            }
+        };
+        let _ = ready_sender.send(true);
+        if let Err(error) = export::write(&db, |row| {
+            sender
+                .blocking_send(Ok(row))
+                .map_err(|_| anyhow::anyhow!("Téléchargement fermé"))
+        }) {
+            let _ = sender.blocking_send(Err(std::io::Error::other(error.to_string())));
+        }
+    });
+    if ready_receiver.await != Ok(true) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"station-blanche-historique.csv\"",
+            ),
+        ],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response())
+}
+
 async fn live(State(app): State<App>) -> Json<serde_json::Value> {
     Json(
         serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"engine":app.engine.read().unwrap().clone(),"progress":app.progress.read().unwrap().clone(),"present_results":app.present_results.read().unwrap().clone(),"pending":*app.pending.read().unwrap(),"error":app.error.read().unwrap().clone()}),
@@ -208,6 +246,7 @@ async fn main() -> Result<()> {
         .route("/app.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/app.js"))}))
         .route("/style.css",get(||async {([(header::CONTENT_TYPE,"text/css; charset=utf-8")],include_str!("../web/style.css"))}))
         .route("/api/status",get(snapshot))
+        .route("/api/export/history.csv",get(export_history))
         .route("/api/live",get(live))
         .route("/api/scans/{id}/findings",get(findings))
         .route("/health/live",get(||async {StatusCode::OK}))

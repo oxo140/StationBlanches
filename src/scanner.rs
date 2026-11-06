@@ -155,6 +155,7 @@ pub fn run(
         errors: 0,
         engine: engine_version.into(),
         quarantined: 0,
+        unverified_files: 0,
     };
     db::start(&db, &scan)?;
     let mut live = Progress {
@@ -281,6 +282,7 @@ pub fn run(
                 Ok(())
             })();
             if let Err(error) = file_result {
+                scan.unverified_files += 1;
                 scan.errors += 1;
                 record(&display, "error", format!("{error:#}"), None, None)?;
             }
@@ -307,11 +309,17 @@ pub fn run(
         guard.check(true)?;
         Ok(())
     })();
+    let interrupted = result.is_err();
     if let Err(error) = result {
         scan.errors += 1;
         record("", "error", format!("{error:#}"), None, None)?;
     }
-    scan.verdict = model::verdict(scan.threats, scan.errors).into();
+    scan.verdict = if interrupted && scan.threats == 0 {
+        "interrupted"
+    } else {
+        model::verdict(scan.threats, scan.errors)
+    }
+    .into();
     scan.finished_at = Some(model::now());
     db::finish(&db, &scan)?;
     tracing::info!(id=%scan.id,verdict=%scan.verdict,files=scan.files,threats=scan.threats,errors=scan.errors,"Analyse terminée");
