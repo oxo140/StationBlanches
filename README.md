@@ -1,273 +1,176 @@
-# Station Blanche v2 — Rust, ClamAV et Docker
+# Station Blanche
 
-Refonte pour **Debian 13 (Trixie), dont 13.7, amd64**, avec bureau graphique et supports USB transmis à la machine. L'application Rust expose un tableau de bord local plein écran et une supervision HTTPS accessible par l'adresse IP de la station.
+**Une station d’analyse USB avec un écran local, une administration web et un historique exportable.**
 
-**Statut : version candidate à valider sur la VM.** Les tests Rust sont automatisés ; le montage USB, le moteur réel et la chaîne Docker doivent aussi passer la recette décrite dans [docs/VALIDATION.md](docs/VALIDATION.md). Les scripts Python historiques sont conservés dans `legacy/` et ne sont plus installés.
+[Installer](#installation-en-une-ligne) · [Utiliser](#analyser-un-support-usb) · [Administrer](#accéder-aux-interfaces) · [Mettre à jour](#mettre-à-jour-lapplication) · [Dépanner](#diagnostic-rapide)
 
-## Fonctionnement
+Station Blanche analyse automatiquement les partitions USB avec **ClamAV**, piloté par une application **Rust**. Les supports sont montés en lecture seule. Les résultats, les détections et les copies de quarantaine sont conservés dans des volumes Docker.
 
-- Détection des partitions USB par udev/systemd sur l'hôte et montage **lecture seule, nodev, nosuid, noexec** dans `/srv/station-blanche/media`.
-- Propagation des montages vers Docker : pas de conteneur privilégié, pas d'accès à `/dev`, pas de socket Docker dans l'application.
-- Client de scan Rust : tampon de 256 Kio réutilisé sur toute l'analyse, SHA-256 calculé pendant la lecture, envoi INSTREAM à ClamAV. La base reste chargée en mémoire dans `clamd` ; son adresse est résolue une seule fois par analyse. Les fichiers sains ne sont pas relus pour calculer leur hash.
-- Parcours des fichiers en flux, fichiers cachés inclus, sans suivre les liens. Les ouvertures Linux utilisent `openat2` pour rester dans le support analysé.
-- Les partitions sont traitées en file d'attente, une à la fois. Une réinsertion produit une nouvelle analyse. Après recréation de l'application, les supports présents sont réanalysés.
-- Recherche de nouvelles signatures toutes les **6 heures**, nouvelle tentative après **1 heure** en cas d'échec. La dernière vérification réussie doit dater de moins de **24 heures** et la version doit être chargée par ClamAV.
-- Verdicts distincts : **aucune menace détectée**, **menace détectée**, **analyse incomplète**, **interrompue**. Fichier illisible, erreur, lien, fichier spécial, limite dépassée ou déconnexion ne donnent jamais un verdict favorable.
-- Copie des fichiers détectés dans une quarantaine privée, nom aléatoire, droits `0600`, vérification SHA-256. **L'original n'est pas supprimé de la clé** : celle-ci reste potentiellement dangereuse. Aucune restauration ou ouverture des échantillons depuis le navigateur.
-- Historique SQLite et indicateurs persistants : analyses, fichiers, volumes lus, détections, partitions infectées, copies en quarantaine, analyses incomplètes et durée moyenne. Les compteurs concernent les **partitions**, pas nécessairement des clés physiques distinctes.
+**Plateforme : Debian 13 (Trixie), amd64, avec bureau graphique.** Une VM doit recevoir les périphériques USB par l’hyperviseur.
 
-## Écran local et supervision web
+> **Version candidate.** Le projet contient des tests automatisés ; la validation sur une Debian vierge, les supports physiques et chaque bureau utilisé reste nécessaire avant production. Voir la [recette de validation](docs/VALIDATION.md).
 
-Le petit écran local se trouve sur **`http://127.0.0.1:8080/kiosk`**. Il est distinct du tableau de bord et affiche uniquement les étapes utiles :
+## Installation en une ligne
 
-1. **Branchez votre clé USB**.
-2. **Comptage des fichiers**, puis **analyse en cours**, avec barre de progression calculée sur les fichiers traités / total, fichier courant, volume lu, débit moyen effectif en Mio/s et temps écoulé. Le comptage ne lit que les répertoires, sans lire le contenu des fichiers. Le pourcentage porte sur le nombre de fichiers, pas sur une estimation du temps restant ; 100 % des fichiers traités ne valide pas le support avant le contrôle final.
-3. **Analyse terminée / aucune menace détectée**, **menace détectée avec nombre de copies en quarantaine**, ou **analyse incomplète**.
-
-La copie de quarantaine est clairement distinguée d'une suppression : les originaux restent sur le support. Le résultat reste affiché tant que la partition est présente. Si d'autres partitions connues attendent leur tour, l'écran ne passe pas encore à un résultat favorable global. Une perte de connexion affiche un état inconnu.
-
-Le kiosque démarre avec Chromium en plein écran après connexion au bureau ; son lanceur attend le serveur HTTP avant d'ouvrir le navigateur. Si Chromium est fermé ou plante, il est relancé après **cinq secondes**. Un profil dédié et un verrou évitent les instances concurrentes. Après une mise à jour du lanceur, déconnectez puis reconnectez la session du bureau pour activer cette surveillance. L'ancien lien `/?kiosk=1` redirige vers ce nouvel écran.
-
-Le bouton **Supervision** et l'adresse locale **`http://127.0.0.1:8080/`** redirigent vers une **page de connexion dédiée** en HTTPS. Utiliser l'identifiant **`admin`** et le mot de passe administrateur configuré à l'installation, même sur la station elle-même. Le hachage bcrypt existant est conservé. La session dure au maximum huit heures, expire lors d'un redémarrage de l'application et peut être fermée par **Déconnexion**. Seuls l'écran USB, son état courant et les sondes de santé restent accessibles sans connexion en local. La supervision conserve l'historique horodaté, le résultat, le nombre de fichiers, les détections, les erreurs et le nombre de copies en quarantaine par analyse. La migration ajoute ce compteur sans effacer les anciennes données.
-
-La connexion propose **Afficher / Masquer** le mot de passe et indique le résultat de sa vérification avant l'ouverture de la supervision. Un refus d'origine ou une panne réseau affiche un message dans le formulaire. La politique de référent `same-origin` permet aux formulaires de conserver leur origine, sans la transmettre aux autres sites ; les origines étrangères ou absentes restent refusées.
-
-Pour les supports lents : parcours en flux, contrôles des montages regroupés (avec vérification finale forcée), TCP sans délai Nagle, tampon réutilisé et conseil de lecture séquentielle au noyau. L'API légère `/api/live` ne lit pas SQLite ; l'historique et les KPI se rafraîchissent toutes les cinq secondes avec une connexion SQL en lecture seule. Les compteurs sont sauvegardés périodiquement et à la fin ; une analyse interrompue ne devient jamais favorable au redémarrage. Seuls les fichiers détectés sont relus pour effectuer et vérifier leur copie de quarantaine. Les gains réels dépendent du support et doivent être mesurés sur la VM.
-
-ClamAV examine également les archives dans ses limites configurées. Le SHA-256 sert ici à l'intégrité et à la traçabilité, pas de moteur antivirus unique. Aucun produit ne garantit l'absence de toute menace.
-
-## Préparer la VM
-
-Prévoir **4 vCPU, 8 Go de RAM, 40 Go de disque minimum**, un bureau GNOME ou XFCE, une connexion Internet et une IPv4 fixe ou une réservation DHCP. Ces ressources sont une base de départ, à ajuster après mesure. Le stockage doit aussi accueillir les bases et la quarantaine.
-
-Configurer le passage USB de l'hyperviseur vers Debian. Vérifier avec `lsblk -f` que la clé apparaît **dans la VM**. Docker ne peut pas rendre visible un périphérique que la VM ne reçoit pas.
-
-Ne pas installer cette station sur le disque USB destiné aux analyses : les règles réservent les systèmes de fichiers USB à la station.
-
-## Installer
-
-**Installation en une ligne**, depuis un terminal Debian avec sudo :
+Dans un terminal **sur la machine Debian**, avec un compte disposant de `sudo` :
 
 ```bash
 (set -e; sudo apt-get update; sudo apt-get install -y ca-certificates curl; sb_install=$(mktemp); trap 'rm -f -- "$sb_install"' EXIT; curl -fsSL https://raw.githubusercontent.com/oxo140/StationBlanches/codex/v2-rust-docker/deploy/bootstrap.sh -o "$sb_install"; sudo bash "$sb_install")
 ```
 
-Cette commande télécharge l'installateur depuis **la branche de refonte** puis l'exécute ; elle fonctionne avant la fusion dans `main`. Les sources sont installées dans `/opt/station-blanche`. Le script vérifie Debian 13 amd64, inventorie les dépendances et détecte l'adresse IP automatiquement.
+La commande récupère actuellement la branche **`codex/v2-rust-docker`**, puis installe le projet dans **`/opt/station-blanche`**. Elle réutilise un dépôt existant s’il correspond à cette branche et ne contient pas de modifications locales.
 
-L'installation est **automatique** : la seule question d'option est **« Souhaitez-vous passer en IPv4 manuelle ? »**, avec **Non par défaut**. Sinon, le réseau actuel (DHCP sur une Debian standard) reste inchangé et l'IP de la station est détectée sans saisie. Les paramètres réseau ne sont demandés que si le mode manuel est choisi. Le diagnostic Internet reste obligatoire et signale une panne sans modifier les DNS tout seul ; utiliser `--network` pour les réparer si nécessaire.
+L’installateur :
 
-Le script installe automatiquement les dépendances manquantes, Docker et ses plugins, Xfce si aucun bureau reconnu n'est présent, Chromium, son démarrage automatique, SSH et jq. Il configure les montages USB, démarre les conteneurs et lance les tests sain/EICAR après disponibilité des signatures. Les paquets déjà installés, notamment Chromium, sont vérifiés et conservés. Les sources APT Docker actives sont reconnues en formats `.list` et `.sources` avant tout ajout : aucune source active n'est dupliquée. Les paquets manquants doivent avoir un candidat APT valide ; une source cassée produit une erreur explicite. Le dépôt applicatif existant est mis à jour sans nouveau clonage s'il est propre et correspond à la branche attendue.
+- vérifie le réseau, les sources APT et les dépendances ; installe les composants manquants ;
+- conserve la configuration réseau actuelle par défaut et demande seulement si une **IPv4 manuelle** est souhaitée ;
+- installe Docker, construit l’application et prépare les montages USB ;
+- configure Chromium, l’ouverture automatique de session et les réglages anti-veille/verrouillage ;
+- configure la supervision HTTPS, la confiance du certificat sur la station, SSH et l’accès RDP Windows ;
+- attend les signatures antivirus et lance les tests avec un document sain et le fichier de test EICAR.
 
-La saisie du **mot de passe HTTPS** reste nécessaire au premier lancement ; un mot de passe existant est conservé. Le compte bureau est détecté depuis sudo ou l'unique compte utilisateur normal. En cas de plusieurs comptes sans utilisateur sudo identifiable, préciser `sudo bash installation.sh --desktop-user UTILISATEUR`, sans devoir saisir une IP. Rust et ClamAV sont fournis dans les images Docker.
+Au premier lancement, créer le **mot de passe administrateur web**, de 16 caractères minimum. Le mot de passe du compte Debian reste inchangé. Une réinstallation conserve les mots de passe existants et les volumes de données.
 
-### Réseau : DHCP, IPv4 manuelle et DNS
+**Redémarrer Debian à la fin** pour appliquer tous les réglages du bureau et l’ouverture automatique de session. L’installateur n’arrête pas la session en cours.
 
-**Avant apt et les téléchargements Docker**, l'installateur demande seulement si vous souhaitez passer en IPv4 manuelle. Répondre Non conserve le DHCP actuel sans demander l'interface ni l'adresse IP. Répondre Oui demande l'adresse avec préfixe, la passerelle et les DNS ; l'interface de la route par défaut est détectée automatiquement. Une interface n'est demandée en mode manuel que si aucune route ne permet de la déterminer. Aucun DNS public n'est imposé.
+## Préparer la machine
 
-Le diagnostic affiche les adresses et la route IPv4, teste `ping 8.8.8.8` et `ping google.com`, vérifie la résolution des domaines nécessaires à Docker, GitHub, Debian et ClamAV, puis l'accès HTTPS. Un ping filtré ne bloque pas une connexion dont le DNS et HTTPS fonctionnent. Une panne DNS, l'absence de route ou une erreur HTTPS bloque les téléchargements avec une explication.
+| Élément | Configuration de départ |
+|---|---|
+| Système | Debian 13 amd64 |
+| Ressources | 4 vCPU, 8 Go de RAM, 40 Go de disque, à ajuster après mesure |
+| Bureau | GNOME, GNOME Flashback, Xfce, KDE Plasma, Cinnamon, MATE, LXDE ou LXQt |
+| Réseau | Internet pour les signatures ; DHCP avec réservation conseillé, ou IPv4 manuelle |
+| USB en VM | Transmission du périphérique à Debian, vérifiable avec `lsblk -f` |
 
-```bash
-cd /opt/station-blanche && sudo bash installation.sh --network-check
-```
+Prévoir de l’espace supplémentaire pour la quarantaine et les fichiers temporaires du moteur. Utiliser un disque système distinct des supports USB à analyser. GDM3, LightDM, SDDM et LXDM sont pris en charge pour l’ouverture automatique de session ; un gestionnaire inconnu produit une erreur explicite.
 
-Configurer ou réparer le réseau indépendamment du reste de l'installation, avec le menu avancé DHCP / IP manuelle / DNS seuls :
+Pour l’installation depuis un clone, le choix du compte bureau ou la configuration réseau avancée, consulter le [guide d’installation](docs/INSTALLATION.md).
 
-```bash
-cd /opt/station-blanche && sudo bash installation.sh --network
-```
+## Analyser un support USB
 
-La configuration automatique prend en charge un profil NetworkManager actif (Ethernet ou Wi-Fi), ainsi que les configurations ifupdown filaires simples dans `/etc/network/interfaces` et `/etc/network/interfaces.d/`. Les autres interfaces et la configuration IPv6 sont conservées ; la réactivation d'une connexion peut renouveler ses adresses dynamiques. Les profils ifupdown avec hooks personnalisés, Wi-Fi, ponts ou agrégations sont laissés intacts et doivent être modifiés dans leur gestionnaire Debian.
+1. Brancher le support sur la station, ou le transmettre à la VM.
+2. Attendre le comptage, puis l’analyse automatique. L’écran affiche la progression par nombre de fichiers, le fichier courant, le volume lu et le débit moyen effectif.
+3. Attendre le résultat final avant de retirer le support.
 
-Avec NetworkManager, un profil est cloné et un checkpoint protège le changement pendant 180 secondes. Avec ifupdown, les fichiers sont sauvegardés sous `/var/lib/station-blanche-network/` et un timer protège la modification. **Pendant l'installation, le changement est confirmé automatiquement uniquement après réussite du diagnostic réseau** ; une panne entraîne un retour arrière. Dans le menu avancé `--network`, la confirmation reste interactive (saisir **Yes** pour NetworkManager). Les hooks DNS prennent en charge les renouvellements dhclient/dhcpcd. Ne pas remplacer manuellement un `/etc/resolv.conf` géré par un résolveur.
+Le comptage parcourt les répertoires sans lire le contenu des fichiers. La progression n’est pas une estimation du temps restant : un gros fichier peut prendre plus de temps que de nombreux petits fichiers. Les partitions sont traitées une à une ; une clé contenant plusieurs partitions génère plusieurs analyses. Une réinsertion déclenche une nouvelle analyse.
 
-**`curl: (6) Could not resolve host: download.docker.com` indique une panne de résolution DNS**, même si une adresse DHCP est présente. Choisir l'option de correction DNS pour essayer les serveurs de votre réseau ou des serveurs publics autorisés (exemple : `1.1.1.1 8.8.8.8`). Une IPv4 fixe seule ne corrige pas le DNS. En cas d'erreur curl 6 pendant le téléchargement de la clé Docker, l'ancienne clé est conservée et l'installation s'arrête sans enregistrer une clé partielle. Si le DNS est tellement défaillant que GitHub lui-même ne peut pas être joint, utiliser d'abord les paramètres réseau du bureau ou `sudo nmtui` si disponible : aucun installateur distant ne peut être téléchargé sans résolution DNS.
+| Résultat affiché | Signification |
+|---|---|
+| **Aucune menace détectée** | Le parcours est terminé sans détection ni erreur, avec un moteur disponible et des signatures vérifiées. |
+| **Analyse terminée · N fichiers non vérifiés** | Certains fichiers n’ont pas pu être entièrement contrôlés. Le résultat reste avec réserves ; **Voir les raisons** explique chaque incident. |
+| **Menace détectée** | Une détection est enregistrée, avec copie en quarantaine lorsqu’elle réussit. |
+| **Analyse interrompue** | Le parcours n’a pas pu être terminé : retrait du support, maintenance ou défaillance, par exemple. |
 
-Avec DHCP, réserver l'adresse de la station dans le routeur. Si son adresse change, relancer l'installateur pour actualiser l'adresse d'écoute HTTPS et le certificat par IP.
+Une archive ou un document protégé par mot de passe est signalé comme **non vérifiable**. Le chiffrement peut servir à dissimuler un logiciel malveillant, mais ne prouve pas une infection. Un fichier trop volumineux, notamment une image ISO, est également signalé avec sa raison.
 
-**Alternative : installation depuis un clone**, pour consulter les scripts avant exécution :
+**La quarantaine est une copie : l’original reste sur la clé USB.** Elle ne désinfecte pas le support. Une copie échouée est signalée dans le rapport. Aucun antivirus ne garantit l’absence de toute menace.
 
-```bash
-sudo apt update
-sudo apt install -y git
-git clone https://github.com/oxo140/StationBlanches.git
-cd StationBlanches
-# Tant que la refonte n'est pas fusionnée :
-git switch codex/v2-rust-docker
-sudo bash installation.sh
-```
+## Accéder aux interfaces
 
-Le script détecte l'adresse de la VM, installe Docker via son dépôt officiel si absent, prépare systemd/udev et construit les images. Il demande un mot de passe administrateur de 16 caractères minimum et en conserve seulement le hash bcrypt. Les fichiers privés sont dans `secrets/`, exclus de Git.
+| Accès | Adresse ou outil | Identifiants |
+|---|---|---|
+| Écran USB sur la station | `http://127.0.0.1:8080/kiosk` | Aucun pour l’état local |
+| Supervision web | `https://IP_DE_LA_STATION` | `admin` et le mot de passe créé dans l’installateur |
+| Bureau distant Windows | `mstsc`, puis `IP_DE_LA_STATION:3389` | Compte Debian et son mot de passe existant |
+| SSH | `ssh UTILISATEUR@IP_DE_LA_STATION` | Compte Debian et ses méthodes d’authentification |
 
-Diagnostic des dépendances, **sans installer ni modifier quoi que ce soit** :
+Le bouton **Supervision** ouvre une page de connexion, même depuis la station. Elle propose **Afficher / Masquer** le mot de passe et indique le résultat de sa vérification. La session web dure au maximum huit heures ; la déconnexion ou le redémarrage de l’application la révoque. **L’historique et l’export CSV restent authentifiés, y compris via l’adresse locale.**
 
-```bash
-cd /opt/station-blanche && sudo bash installation.sh --check
-```
+Le certificat HTTPS est approuvé automatiquement dans le système Debian et les magasins Chromium de la station. Sur un autre poste, importer le certificat public après vérification de son empreinte : [procédure HTTPS](docs/EXPLOITATION.md#certificat-https).
 
-Le diagnostic vérifie les paquets et commandes hôte, Chromium, SSH, jq, Docker CLI, Compose, Buildx, l'accès au démon et la configuration lorsqu'elle existe. Code de sortie `0` : dépendances requises disponibles ; `1` : élément manquant, réseau indisponible ou Docker inaccessible. Xfce reste optionnel si un autre bureau compatible est déjà installé. Si Docker Debian `docker.io` existe déjà, les plugins manquants sont installés depuis Debian ; aucune migration ou suppression automatique d'un moteur existant n'est faite.
+XRDP ouvre un **bureau Xfce de maintenance séparé** ; il ne partage pas l’écran local et ne remplace pas le kiosque. Choisir **Xorg** si demandé. Le compte `admin` du site web n’est pas un compte RDP. Voir le [guide RDP](docs/EXPLOITATION.md#bureau-à-distance-windows).
 
-Le script n'effectue pas de mise à niveau générale de Debian et n'ajoute pas d'extinction automatique. Une réinstallation conserve les données et le mot de passe existant.
+### Historique et export CSV
 
-Retirer puis réinsérer les clés déjà montées par le bureau avant l'installation. La première récupération des signatures peut prendre plusieurs minutes ; l'application reste bloquée tant que le moteur n'est pas prêt.
+La supervision présente les KPI, les dernières analyses, les fichiers non vérifiés et leurs raisons, ainsi que les références de quarantaine.
 
-- Écran local : `http://127.0.0.1:8080/kiosk`, lecture seule, accessible uniquement depuis la station.
-- Supervision distante : `https://192.168.1.50`, utilisateur `admin`, mot de passe choisi à l'installation.
-- Le bureau est détecté automatiquement : GNOME, GNOME Flashback, Xfce, KDE Plasma, Cinnamon, MATE, LXDE et LXQt. L'installateur configure l'ouverture automatique du compte bureau avec GDM3, LightDM, SDDM ou LXDM, désactive la suspension système et applique les réglages anti-veille/verrouillage au compte du kiosque. **Le mot de passe Debian existant est conservé et n'est jamais stocké par Station Blanche.** L'administration web garde sa connexion séparée.
-- Après installation ou mise à jour de ces réglages, **redémarrer Debian** pour appliquer le gestionnaire de connexion, logind et tous les composants du bureau. La session en cours n'est pas arrêtée par l'installateur. Les réglages système d'origine sont sauvegardés dans `/var/lib/station-blanche/desktop-backups`, ceux du compte dans `~/.config/station-blanche/desktop-backups`.
-- Chromium utilise un profil dédié. Le superviseur contrôle la page réellement chargée, son rendu et l'onglet actif via un pipe privé, **sans port de débogage réseau**. Une supervision ou une page de connexion Station Blanche active est acceptée. Si l'onglet disparaît, il est rouvert après cinq secondes de défaut confirmé ; si Chromium se ferme, le navigateur est relancé après cinq secondes. Un navigateur bloqué entraîne une récupération limitée puis un redémarrage. Le démarrage initial dispose d'une tolérance de vingt secondes.
+**Exporter tout l’historique · CSV** télécharge **une ligne par analyse enregistrée**, sans la limite des 100 analyses affichées. L’export comprend les dates UTC, compteurs, résultats, moteur et tous les événements disponibles, avec leurs raisons, références de quarantaine et SHA-256.
 
-Diagnostic du kiosque après connexion automatique au bureau :
+Le CSV est compatible Excel/LibreOffice : UTF-8 avec BOM, séparateur point-virgule et champs protégés contre l’interprétation en formules. Les détails ne sont pas limités aux 500 événements de la fenêtre web. Le téléchargement se fait en flux sur un instantané de l’historique.
 
-Le kiosque utilise Chromium en navigation privée avec `--password-store=basic` pour éviter la demande « Unlock Login Keyring » après ouverture automatique de session. Aucun mot de passe ni cookie de connexion de cette session n'est enregistré durablement par Chromium ; il faudra se reconnecter à la supervision après fermeture complète du navigateur. Le trousseau Debian et les identifiants Wi-Fi restent inchangés. Ce réglage concerne uniquement le profil dédié Station Blanche.
+Les KPI comptent des **analyses de partitions**, pas forcément des clés physiques distinctes. Les analyses du jour sont comptées en UTC ; les dates de l’interface suivent le fuseau du navigateur. Les anciens événements restent conservés avec leurs codes techniques d’origine.
 
-```bash
-cd /opt/station-blanche && sudo bash deploy/check-kiosk.sh
-```
+## Mise à jour des signatures antivirus
 
-Le diagnostic exige une confirmation récente de Chromium ; un simple processus présent ne suffit pas. Il vérifie une page chargée et un onglet actif, sans pouvoir confirmer l'état physique du moniteur. Pour réappliquer uniquement les réglages du bureau : `sudo bash deploy/desktop.sh UTILISATEUR`. Un gestionnaire de connexion inconnu provoque une erreur explicite plutôt qu'une configuration approximative.
+FreshClam récupère les bases officielles ClamAV auprès de `database.clamav.net` : `main`, `daily` et `bytecode`.
 
-## Accès Bureau à distance depuis Windows
+| Situation | Comportement actuel |
+|---|---|
+| Démarrage du conteneur ClamAV | Vérification des bases avant le lancement du moteur |
+| Fonctionnement normal | Nouveau contrôle toutes les **6 heures** |
+| Échec d’un contrôle périodique | Nouvelle tentative **1 heure** plus tard |
+| Échec du tout premier contrôle au démarrage | Prochaine tentative planifiée après **6 heures** — limite actuelle |
+| Aucun contrôle réussi depuis plus de **24 heures** | Nouvelles analyses bloquées |
 
-L'installation et la mise à jour installent automatiquement **XRDP, xorgxrdp et un bureau Xfce de maintenance**, même si le bureau local est différent. Dans Windows, ouvrir **Connexion Bureau à distance** (`Win` + `R`, puis `mstsc`) et saisir l'adresse IP de la station, par exemple `192.168.156.128:3389`. Utiliser le **compte Debian détecté** (par exemple `william`) et son **mot de passe Debian existant**, pas le compte `admin` de la supervision. Si XRDP propose un choix de session, choisir **Xorg**.
+FreshClam vérifie les bases et demande leur rechargement. L’application compare la version `daily` vérifiée à celle annoncée par le moteur avant d’autoriser une analyse. Un contrôle sans nouveauté est un succès ; un échec ne rafraîchit jamais artificiellement la date. Les bases sont conservées après recréation des conteneurs.
 
-XRDP ouvre une **session séparée**, sans partager ni remplacer l'écran local. La session distante possède son propre bus et ses réglages Xfce ; le lanceur du kiosque n'y démarre pas. La fermeture de la fenêtre RDP ne coupe pas les conteneurs ni les analyses. Une session distante déconnectée est nettoyée après cinq minutes.
+**Les signatures sont mises à jour automatiquement ; le programme ClamAV et l’application se mettent à jour par reconstruction des images.** Les fichiers USB sont analysés localement, sans envoi à un service d’analyse en ligne.
 
-Le service écoute uniquement sur l'IPv4 configurée, port TCP **3389**, avec TLS 1.2/1.3. Le groupe `station-rdp` limite les connexions au compte autorisé ; root est refusé et aucun mot de passe n'est enregistré. Si UFW est actif, une règle autorise le sous-réseau local ; un autre pare-feu existant reste à configurer pour cette connexion. Le certificat XRDP est distinct du certificat web Caddy : pour identifier celui fourni par défaut par Debian, afficher son empreinte avec `sudo openssl x509 -in /etc/xrdp/cert.pem -noout -fingerprint -sha256`, puis le faire approuver sur le poste Windows après vérification.
+## Mettre à jour l’application
 
-Pour installer uniquement l'accès distant sur une station existante :
-
-```bash
-cd /opt/station-blanche && sudo git pull --ff-only && sudo bash deploy/desktop.sh william && sudo bash deploy/rdp.sh william
-```
-
-Adapter `william` au compte Debian. Aucun redémarrage de la VM n'est nécessaire pour démarrer XRDP. Le script conserve les services si une connexion RDP est active, afin de ne pas couper une mise à jour lancée à distance ; les changements éventuels de configuration seront alors chargés au prochain redémarrage.
-
-Diagnostic : `sudo bash deploy/check-rdp.sh`. Pour les erreurs : `sudo journalctl -u xrdp -u xrdp-sesman --no-pager -n 60`. L'adresse doit être joignable depuis Windows ; une VM en NAT n'est pas forcément accessible depuis les autres machines du réseau physique.
-
-## Tester : fichier sain et détection antivirus
-
-### Export et résultats avec réserves
-
-Dans la supervision authentifiée, **Exporter tout l’historique · CSV** télécharge une ligne par analyse enregistrée, sans la limite des 100 lignes affichées. L'export contient dates UTC, support, compteurs, moteur, résultat, nombre de fichiers non vérifiés et tous les événements avec raisons, références de quarantaine et SHA-256 disponibles. Les détails ne sont pas limités aux 500 événements de la fenêtre web. Le CSV utilise UTF-8 avec BOM, des points-virgules, des champs protégés pour Excel/LibreOffice et un téléchargement en flux sur un instantané SQLite ; aucun historique complet n'est chargé en mémoire.
-
-Une analyse qui atteint la fin du parcours avec des erreurs de fichier affiche **Analyse terminée · N fichier(s) non vérifié(s)**, avec **Voir les raisons**. Le résultat reste orange et le support n'est pas considéré entièrement vérifié. Les archives/documents signalés comme chiffrés par ClamAV deviennent des fichiers non vérifiables, sans compter le chiffrement seul comme une menace ni déclencher une copie en quarantaine. Le message explique qu'un mot de passe peut servir à dissimuler un malware, sans être une preuve d'infection. Les fichiers trop volumineux, notamment des ISO, indiquent la limite atteinte ; ils ne sont pas ignorés silencieusement.
-
-Un retrait du support, un arrêt de maintenance ou une défaillance empêchant de terminer le parcours restent **Analyse interrompue**. Les codes techniques historiques (`incomplete`, etc.) sont conservés dans SQLite et dans une colonne dédiée du CSV ; les anciens événements ne sont pas réécrits. Le nombre de fichiers non vérifiés est déduit des chemins distincts consignés en erreur, pas du nombre total d'incidents de la station.
-
-Le test utilise le [fichier standard EICAR](https://www.eicar.org/download-anti-malware-testfile/), **pas un vrai virus**. Son contenu est généré localement et vérifié (68 octets, SHA-256), sans téléchargement d'échantillon malveillant.
-
-### Test automatique du moteur installé
+Entre deux analyses, après une sauvegarde ou un instantané :
 
 ```bash
-cd /opt/station-blanche && sudo bash deploy/test-antivirus.sh --engine --wait 900
+cd /opt/station-blanche && sudo git pull --ff-only && sudo bash deploy/update.sh
 ```
 
-Le script attend le moteur et des signatures vérifiées, puis exige un code `0` pour un document sain et un code `1` avec une signature EICAR pour le fichier de test. Une panne du moteur ou l'absence de détection fait échouer le script. Ces deux scans directs **ne modifient pas l'historique USB, les KPI ou la quarantaine**.
+Le script réapplique les intégrations du bureau et de XRDP, reconstruit les images et recrée les conteneurs. L’historique, la quarantaine, les signatures et les données Caddy sont conservés. Redémarrer Debian lorsque les réglages du bureau ont changé.
 
-### Test complet avec une clé USB
+Pour un clone appartenant à votre compte utilisateur, exécuter `git pull --ff-only` sans `sudo` dans ce clone. **Ne pas utiliser `docker compose down -v` pour une mise à jour : cette option supprime les volumes.**
 
-Sur un poste de préparation Linux (ou avant d'activer les montages en lecture seule), créer les fichiers :
+## Diagnostic rapide
 
-```bash
-bash deploy/test-antivirus.sh --fixtures /tmp
-```
+Les commandes suivantes sont à exécuter dans `/opt/station-blanche` :
 
-Le script affiche un nouveau répertoire contenant `clean/document-sain.txt` et `infected/eicar.com.txt`, sans écraser de fichier existant. Copier **seulement `clean/`** sur une clé de test vide, puis retirer la clé du poste de préparation. Sur la station, retirer la clé avant de lancer le script suivant et l'insérer quand le script le demande :
+| Besoin | Commande |
+|---|---|
+| État des conteneurs | `sudo docker compose ps -a` |
+| Journaux récents | `sudo docker compose logs --tail=100 app clamav web` |
+| Dépendances et réseau, sans installation | `sudo bash installation.sh --check` |
+| Réseau uniquement | `sudo bash installation.sh --network-check` |
+| Réparation réseau interactive | `sudo bash installation.sh --network` |
+| Accès à l’écran local | `sudo bash deploy/check-web.sh 10` |
+| Page Chromium chargée et onglet actif | `sudo bash deploy/check-kiosk.sh` |
+| Services et port RDP | `sudo bash deploy/check-rdp.sh` |
+| Tests antivirus sain / EICAR | `sudo bash deploy/test-antivirus.sh --engine --wait 900` |
 
-```bash
-cd /opt/station-blanche && sudo bash deploy/test-antivirus.sh --verify-usb clean sdb1 300
-```
+`curl: (6) Could not resolve host` indique un problème DNS : une adresse DHCP ne garantit pas la résolution des noms. Si GitHub lui-même ne peut pas être résolu, corriger d’abord le réseau dans Debian. Le [guide d’installation](docs/INSTALLATION.md#réseau--dhcp-ipv4-manuelle-et-dns) détaille le diagnostic et le retour arrière des changements réseau.
 
-Remplacer `sdb1` par la partition reçue dans la VM, visible avec `lsblk`. Le test exige une **nouvelle** analyse de cette partition, au moins un fichier analysé, zéro détection, zéro erreur et une hausse du compteur d'analyses.
+Les tests EICAR utilisent un fichier standard de test, pas un véritable virus. Les commandes ci-dessus ne remplacent pas la [recette complète sur supports USB](docs/EXPLOITATION.md#tester-le-moteur-et-les-supports-usb).
 
-Ensuite, ajouter `infected/eicar.com.txt` sur la clé depuis le poste de préparation, la retirer et lancer sur la station :
+## Bureau et disponibilité du kiosque
 
-```bash
-cd /opt/station-blanche && sudo bash deploy/test-antivirus.sh --verify-usb infected sdb1 300
-```
+L’ouverture automatique de session et les réglages anti-veille/verrouillage concernent le compte du kiosque. **Le mot de passe Debian reste inchangé et n’est pas enregistré par l’application.** Les réglages remplacés sont sauvegardés avant modification.
 
-Insérer la clé après le message. Le script vérifie le verdict infecté, l'absence d'erreur, l'enregistrement d'une copie EICAR avec le bon SHA-256 et l'augmentation des KPI d'analyse, détection et quarantaine. `jq` est installé automatiquement. Les analyses de test restent dans l'historique ; le script n'efface aucun résultat ni fichier sur la clé. La copie isolée n'enlève pas l'original EICAR de la clé.
+Chromium utilise un profil dédié en navigation privée pour éviter la demande de déverrouillage du trousseau. Le trousseau du bureau, notamment pour le Wi-Fi, reste inchangé. Une fermeture complète du navigateur impose une nouvelle connexion à la supervision.
 
-## Faire confiance au certificat HTTPS
+Le superviseur contrôle le rendu de la page et l’onglet actif par un **pipe privé, sans port de débogage réseau**. Il accepte le kiosque, la connexion ou la supervision. Il relance Chromium cinq secondes après sa fermeture et récupère un onglet disparu après un défaut confirmé. Le démarrage initial dispose d’une tolérance de vingt secondes ; un navigateur bloqué entraîne une récupération limitée puis un redémarrage. Ce contrôle ne confirme pas l’état physique du moniteur.
 
-L'accès par IP utilise l'autorité locale de Caddy. Il faut installer **uniquement son certificat public** sur les postes d'administration :
+## Architecture et limites
 
-L'installateur et `deploy/update.sh` le font automatiquement **sur la station Debian**, dans le magasin système et dans les deux emplacements NSS utilisés par Chromium. Redémarrer le navigateur après cette opération. Le message « Non sécurisé » doit alors disparaître pour l'adresse HTTPS configurée. Sur les autres postes, effectuer l'import ci-dessous ; la station ne peut pas modifier à distance leur magasin de confiance.
+| Composant | Rôle |
+|---|---|
+| Application Rust | Parcours USB, communication antivirus, SHA-256, quarantaine, SQLite, API et connexion web |
+| ClamAV / FreshClam | Détection des menaces et actualisation des signatures |
+| Caddy | Accès HTTPS et contrôle de la session web |
+| Scripts Shell / Python | Installation Debian, montages, bureau, XRDP et surveillance de Chromium |
+| HTML / CSS / JavaScript | Écran local et administration web |
 
-```bash
-sudo docker compose cp web:/data/caddy/pki/authorities/local/root.crt ./station-blanche-ca.crt
-```
+Les fichiers sains sont lus une seule fois pour l’envoi à ClamAV et le SHA-256. Seuls les fichiers détectés sont relus pour vérifier leur copie de quarantaine. Les conteneurs ne reçoivent ni mode privilégié ni socket Docker ; le montage USB est effectué sur l’hôte.
 
-Transférer ce certificat par un canal de confiance et comparer son empreinte :
+- **1 Gio par fichier**, **2 Gio cumulés par archive**, 10 000 fichiers internes et 20 niveaux d’archives. Un dépassement empêche la validation complète du fichier.
+- Délais : dix minutes de traitement ClamAV et quinze minutes pour transmettre un fichier depuis le support. Les temporaires ClamAV utilisent un volume sur disque.
+- Formats montés : FAT, exFAT, NTFS via ntfs3, ext2/3/4. Les supports chiffrés et les autres formats ne sont pas montés automatiquement.
+- Quarantaine par copie ; aucune suppression ou restauration depuis le navigateur. Aucune purge automatique : surveiller l’espace disque.
+- Docker partage le noyau de l’hôte : l’isolation ne couvre pas toutes les attaques matérielles USB. Les performances dépendent notamment du support et du moteur ; aucun gain chiffré n’est annoncé sans mesure.
 
-```bash
-openssl x509 -in station-blanche-ca.crt -noout -fingerprint -sha256
-```
+## Documentation et développement
 
-Sous Windows, importer ce certificat dans les autorités de certification racines de confiance du compte administrateur. Sous Debian, le copier dans `/usr/local/share/ca-certificates/` puis lancer `sudo update-ca-certificates`. Certains navigateurs utilisent leur propre magasin. Ne pas contourner les avertissements de certificat et ne jamais exporter `root.key`.
-
-Seul le port HTTPS 443 est publié sur l'IP choisie. Le HTTP local reste lié à `127.0.0.1` ; le port ClamAV 3310 n'est pas publié. Le réseau Docker du moteur est isolé de celui de la supervision. Ne pas rediriger le port 443 depuis Internet. Les postes locaux de la station ont accès à la supervision sans authentification via loopback : la session du kiosque doit rester réservée à cet usage.
-
-Le port local 8080 est publié par **Caddy**, qui transmet la requête à l'application sur le réseau interne. L'application Rust ne publie pas directement de port depuis ses réseaux internes. L'installation et la mise à jour vérifient la page depuis l'hôte avec `deploy/check-web.sh` ; ce contrôle ne dépend pas de la fin du téléchargement des signatures.
-
-Si le navigateur affiche « connexion échouée » :
-
-```bash
-cd /opt/station-blanche
-sudo docker compose ps -a
-sudo docker compose logs --tail=80 app web clamav
-sudo bash deploy/check-web.sh 10
-```
-
-## Mettre à jour l'application
-
-À effectuer entre deux analyses, après un instantané ou une sauvegarde :
-
-```bash
-cd /opt/station-blanche
-sudo git pull --ff-only
-sudo bash deploy/update.sh
-```
-
-Pour un clone installé manuellement dans votre compte, utiliser `git pull --ff-only` sans sudo dans ce clone.
-
-Ce script reconstruit les images avec les paquets Debian courants et recrée les conteneurs. Les volumes `history`, `quarantine`, `signatures` et Caddy sont conservés. Les signatures sont mises à jour séparément, sans reconstruire l'application.
-
-Ne pas exécuter `docker compose down -v` : cela supprime les volumes. Les tags de base `rust:1-trixie`, `debian:trixie-slim` et `caddy:2` suivent les correctifs ; pour un déploiement figé, consigner et épingler leurs digests après la recette. Les dépendances Rust sont verrouillées par `Cargo.lock`.
-
-Mise à jour immédiate des signatures, sans lancer deux instances concurrentes de FreshClam :
-
-```bash
-sudo docker compose restart clamav
-```
-
-Les analyses sont bloquées pendant le redémarrage. Une analyse active peut devenir incomplète : attendre son terme avant maintenance.
-
-## Exploitation et sauvegardes
-
-```bash
-sudo docker compose ps
-sudo docker compose logs --tail=100 app clamav web
-curl -i http://127.0.0.1:8080/health/ready
-systemctl status station-blanche-media.service
-journalctl -u 'station-blanche-usb@*' --since today
-findmnt -R /srv/station-blanche/media
-```
-
-`/health/live` vérifie que le serveur répond ; `/health/ready` retourne 503 si le moteur ou les signatures sont indisponibles. Le tableau de bord affiche la raison du blocage. Les contrôles Docker n'effectuent pas de redémarrage sur un simple état `unhealthy` : surveiller les alertes affichées.
-
-Pour sauvegarder, arrêter l'application et ClamAV, sauvegarder les volumes Docker, `.env` et `secrets/`, puis redémarrer. Ne pas copier un fichier SQLite en cours d'écriture en oubliant son WAL. Le volume de quarantaine contient des fichiers potentiellement dangereux : conserver des droits stricts et ne pas l'exposer au partage réseau. Aucune purge automatique n'est appliquée ; surveiller l'espace disque et définir une politique de rétention avant production.
-
-## Limites de cette version candidate
-
-- Formats montés : FAT, exFAT, NTFS via ntfs3, ext2/3/4. Supports chiffrés et autres formats non montés automatiquement. Les permissions Unix des fichiers sont respectées ; un fichier inaccessible entraîne un résultat incomplet.
-- Limite par fichier : **1 Gio (1 024 Mio)**. Limites d'archives : **2 Gio** de données cumulées analysées, 10 000 fichiers et 20 niveaux ; un dépassement signalé par le moteur entraîne un résultat incomplet. Une archive chiffrée peut être signalée comme détection heuristique. ClamAV dispose de dix minutes de traitement par fichier et l'application de quinze minutes pour transmettre un fichier depuis un support lent. Les fichiers temporaires du moteur utilisent le volume Docker `scan_temp` sur disque, sans saturer le petit `/tmp` en mémoire. Une seule analyse ClamAV est exécutée à la fois pour limiter la consommation mémoire.
-- La quarantaine est une copie isolée et non une désinfection du support. Il faut traiter la clé séparément après une détection.
-- Administration web en lecture seule : pas de suppression, restauration, lancement de commande ou mise à jour applicative depuis le navigateur. Le module mail historique est désactivé.
-- Les 100 dernières analyses et les 500 premiers événements d'une analyse sont affichés ; les compteurs globaux utilisent tout l'historique. Les analyses du jour sont comptées en UTC, les heures affichées dans le fuseau du navigateur.
-- Docker isole les services mais pas le noyau qui monte le système de fichiers. Garder Debian à jour et utiliser une machine dédiée ; la station ne protège pas contre toutes les attaques matérielles USB.
-
-## Développer et vérifier
+- [Installation détaillée et configuration réseau](docs/INSTALLATION.md)
+- [Exploitation : certificats, RDP, tests et sauvegardes](docs/EXPLOITATION.md)
+- [Architecture technique](docs/ARCHITECTURE.md)
+- [Recette Debian et validation avant production](docs/VALIDATION.md)
 
 ```bash
 cargo fmt --check
@@ -275,4 +178,4 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
-Le binaire se compile aussi sur Windows pour les tests de protocole et de persistance ; le scan USB de production nécessite Linux. Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/VALIDATION.md](docs/VALIDATION.md).
+Le binaire peut être compilé sous Windows pour certains tests ; **le scan USB de production nécessite Linux**. Les dépendances Rust sont verrouillées par `Cargo.lock`. Les scripts historiques de `legacy/` ne sont plus installés.
