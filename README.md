@@ -126,6 +126,24 @@ cd /opt/station-blanche && sudo bash deploy/check-kiosk.sh
 
 Le diagnostic exige une confirmation récente de Chromium ; un simple processus présent ne suffit pas. Il vérifie une page chargée et un onglet actif, sans pouvoir confirmer l'état physique du moniteur. Pour réappliquer uniquement les réglages du bureau : `sudo bash deploy/desktop.sh UTILISATEUR`. Un gestionnaire de connexion inconnu provoque une erreur explicite plutôt qu'une configuration approximative.
 
+## Accès Bureau à distance depuis Windows
+
+L'installation et la mise à jour installent automatiquement **XRDP, xorgxrdp et un bureau Xfce de maintenance**, même si le bureau local est différent. Dans Windows, ouvrir **Connexion Bureau à distance** (`Win` + `R`, puis `mstsc`) et saisir l'adresse IP de la station, par exemple `192.168.156.128:3389`. Utiliser le **compte Debian détecté** (par exemple `william`) et son **mot de passe Debian existant**, pas le compte `admin` de la supervision. Si XRDP propose un choix de session, choisir **Xorg**.
+
+XRDP ouvre une **session séparée**, sans partager ni remplacer l'écran local. La session distante possède son propre bus et ses réglages Xfce ; le lanceur du kiosque n'y démarre pas. La fermeture de la fenêtre RDP ne coupe pas les conteneurs ni les analyses. Une session distante déconnectée est nettoyée après cinq minutes.
+
+Le service écoute uniquement sur l'IPv4 configurée, port TCP **3389**, avec TLS 1.2/1.3. Le groupe `station-rdp` limite les connexions au compte autorisé ; root est refusé et aucun mot de passe n'est enregistré. Si UFW est actif, une règle autorise le sous-réseau local ; un autre pare-feu existant reste à configurer pour cette connexion. Le certificat XRDP est distinct du certificat web Caddy : pour identifier celui fourni par défaut par Debian, afficher son empreinte avec `sudo openssl x509 -in /etc/xrdp/cert.pem -noout -fingerprint -sha256`, puis le faire approuver sur le poste Windows après vérification.
+
+Pour installer uniquement l'accès distant sur une station existante :
+
+```bash
+cd /opt/station-blanche && sudo git pull --ff-only && sudo bash deploy/desktop.sh william && sudo bash deploy/rdp.sh william
+```
+
+Adapter `william` au compte Debian. Aucun redémarrage de la VM n'est nécessaire pour démarrer XRDP. Le script conserve les services si une connexion RDP est active, afin de ne pas couper une mise à jour lancée à distance ; les changements éventuels de configuration seront alors chargés au prochain redémarrage.
+
+Diagnostic : `sudo bash deploy/check-rdp.sh`. Pour les erreurs : `sudo journalctl -u xrdp -u xrdp-sesman --no-pager -n 60`. L'adresse doit être joignable depuis Windows ; une VM en NAT n'est pas forcément accessible depuis les autres machines du réseau physique.
+
 ## Tester : fichier sain et détection antivirus
 
 Le test utilise le [fichier standard EICAR](https://www.eicar.org/download-anti-malware-testfile/), **pas un vrai virus**. Son contenu est généré localement et vérifié (68 octets, SHA-256), sans téléchargement d'échantillon malveillant.

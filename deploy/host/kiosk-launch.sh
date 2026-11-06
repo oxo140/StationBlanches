@@ -1,5 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
+# Le bureau RDP sert à la maintenance ; il ne doit pas reprendre le profil du kiosque.
+if [[ "${SB_RDP_SESSION:-0}" == 1 ]]; then exit 0; fi
 profile="${XDG_CONFIG_HOME:-$HOME/.config}/station-blanche/chromium"
 mkdir -p "$profile"
 exec 9>"${profile%/*}/kiosk.lock"

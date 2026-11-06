@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 bash deploy/desktop.sh
+bash deploy/rdp.sh
 bash deploy/prepare-auth.sh
 docker compose config --quiet
 docker compose build --pull

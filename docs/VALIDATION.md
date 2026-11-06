@@ -22,6 +22,8 @@ Le README propose une commande d'installation en une ligne. Le bootstrap réutil
 
 ## Supports et verdicts
 
+Avant les tests USB, vérifier l'accès XRDP depuis Windows avec le compte Debian autorisé : session Xorg/Xfce, refus de root et d'un compte hors groupe, certificat et TLS, reconnexion et fermeture de la fenêtre distante. Le kiosque local doit rester affiché, sans second superviseur créé dans la session RDP. Vérifier les réglages du pare-feu et que `sudo bash deploy/check-rdp.sh` confirme les deux services et le port. Les tests `tests/rdp_checks.py` vérifient la configuration sans effacer les paramètres Xorg répétés ; ils ne remplacent pas cette connexion réelle.
+
 1. Clé FAT/exFAT avec fichier ordinaire et fichier caché : tous les fichiers comptés, aucune menace détectée.
 2. Clé contenant un fichier de test antivirus EICAR obtenu depuis sa source officielle : détection, SHA-256 enregistré, copie privée en quarantaine, original conservé. Ne pas utiliser de malware réel pour la recette.
 3. Archive contenant le fichier de test : détection à l'intérieur de l'archive, copie du conteneur analysé en quarantaine.

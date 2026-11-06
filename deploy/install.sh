@@ -122,6 +122,7 @@ systemctl enable --now station-blanche-media.service
 udevadm control --reload-rules
 printf 'STATION_IP=%s\n' "$station_ip" > .env
 bash deploy/desktop.sh "$desktop_user"
+bash deploy/rdp.sh "$desktop_user"
 install -d -m 0700 secrets
 if [[ ! -s secrets/admin.caddy ]]; then
     docker pull caddy:2

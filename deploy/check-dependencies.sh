@@ -35,6 +35,10 @@ check 'Hachage de connexion disponible' test -s secrets/admin.hash
 check 'Chromium utilisable' chromium --version
 check 'Outils de test et KPI (jq)' jq --version
 check 'Paquet serveur SSH' sb_installed openssh-server
+check 'Serveur Bureau à distance Windows (XRDP)' sb_installed xrdp
+check 'Session Xorg RDP' sb_installed xorgxrdp
+check 'Service XRDP actif' systemctl is-active --quiet xrdp
+check 'Service de sessions XRDP actif' systemctl is-active --quiet xrdp-sesman
 check 'Binaire serveur SSH' test -x /usr/sbin/sshd
 if command -v xfce4-session >/dev/null; then echo '[OPTIONNEL OK] Xfce'; else echo '[OPTIONNEL ABSENT] Xfce (un autre bureau convient aussi)'; fi
 if [[ -f .env && -s secrets/admin.caddy ]]; then
