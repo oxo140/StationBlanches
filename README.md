@@ -118,6 +118,8 @@ Retirer puis réinsérer les clés déjà montées par le bureau avant l'install
 
 Diagnostic du kiosque après connexion automatique au bureau :
 
+Le kiosque utilise Chromium en navigation privée avec `--password-store=basic` pour éviter la demande « Unlock Login Keyring » après ouverture automatique de session. Aucun mot de passe ni cookie de connexion de cette session n'est enregistré durablement par Chromium ; il faudra se reconnecter à la supervision après fermeture complète du navigateur. Le trousseau Debian et les identifiants Wi-Fi restent inchangés. Ce réglage concerne uniquement le profil dédié Station Blanche.
+
 ```bash
 cd /opt/station-blanche && sudo bash deploy/check-kiosk.sh
 ```

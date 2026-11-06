@@ -135,7 +135,8 @@ def main():
             # bash duplique stdin/stdout en FD 3/4 attendus par Chromium. Aucun socket CDP.
             command = ["bash", "-c", 'exec "$@" 3<&0 4>&1 </dev/null >/dev/null', "station-blanche", "chromium",
                        f"--user-data-dir={profile}", "--kiosk", "--no-first-run", "--noerrdialogs",
-                       "--disable-background-mode", "--disable-session-crashed-bubble", "--remote-debugging-pipe", KIOSK]
+                       "--disable-background-mode", "--disable-session-crashed-bubble",
+                       "--password-store=basic", "--incognito", "--remote-debugging-pipe", KIOSK]
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
             protocol = Protocol(process)
             startup_until = time.monotonic() + 20
