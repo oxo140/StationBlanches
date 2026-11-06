@@ -1,0 +1,43 @@
+{
+    admin off
+    default_sni {$STATION_IP}
+    skip_install_trust
+    auto_https disable_redirects
+}
+http://:8080 {
+    @old_kiosk {
+        path /
+        query kiosk=1
+    }
+    redir @old_kiosk /kiosk 307
+    @kiosk path /kiosk /kiosk.js /kiosk.css /state.js /api/live /health/live /health/ready
+    handle @kiosk {
+        reverse_proxy app:8080
+    }
+    handle {
+        redir https://{$STATION_IP}{uri} 307
+    }
+}
+https://{$STATION_IP} {
+    tls internal
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+        -Server
+    }
+    @public path /login /login.css /login.js /auth/login /auth/logout
+    handle @public {
+        reverse_proxy app:8080
+    }
+    handle {
+        forward_auth app:8080 {
+            uri /auth/check
+            @unauthorized status 401
+            handle_response @unauthorized {
+                redir * /login 303
+            }
+        }
+        reverse_proxy app:8080
+    }
+}

@@ -1,0 +1,285 @@
+mod auth;
+mod config;
+mod db;
+mod engine;
+mod export;
+mod model;
+mod mounts;
+mod scanner;
+
+use anyhow::{Context, Result};
+use axum::{
+    Json, Router,
+    extract::{Path, Query, State},
+    http::{StatusCode, header},
+    response::{Html, IntoResponse, Redirect, Response},
+    routing::{get, post},
+};
+use config::Config;
+use model::{EngineStatus, Progress};
+use std::{
+    collections::HashMap,
+    fs,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+#[derive(Clone)]
+struct App {
+    config: Config,
+    engine: Arc<RwLock<EngineStatus>>,
+    progress: Arc<RwLock<Progress>>,
+    error: Arc<RwLock<Option<String>>>,
+    present_results: Arc<RwLock<Vec<model::Scan>>>,
+    pending: Arc<RwLock<usize>>,
+}
+
+fn worker(app: App, stop: Arc<AtomicBool>) {
+    let mut completed = HashMap::new();
+    let mut engine_checked: Option<Instant> = None;
+    while !stop.load(Ordering::Relaxed) {
+        if engine_checked.is_none_or(|t| t.elapsed() >= Duration::from_secs(10)) {
+            *app.engine.write().unwrap() = engine::health(&app.config);
+            engine_checked = Some(Instant::now());
+        }
+        let work = (|| -> Result<()> {
+            let mounts = mounts::list(&app.config.media)?;
+            completed.retain(|key, _| mounts.iter().any(|m| &m.key == key));
+            *app.present_results.write().unwrap() = completed.values().cloned().collect();
+            *app.pending.write().unwrap() = mounts
+                .iter()
+                .filter(|m| !completed.contains_key(&m.key))
+                .count();
+            if !app.engine.read().unwrap().ready {
+                return Ok(());
+            }
+            for mount in mounts {
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                if completed.contains_key(&mount.key) {
+                    continue;
+                }
+                let engine = engine::health(&app.config);
+                engine_checked = Some(Instant::now());
+                *app.engine.write().unwrap() = engine.clone();
+                if !engine.ready {
+                    break;
+                }
+                let result =
+                    scanner::run(&app.config, &mount, &engine.version, &app.progress, &stop)?;
+                completed.insert(mount.key, result);
+                let latest = mounts::list(&app.config.media)?;
+                completed.retain(|key, _| latest.iter().any(|m| &m.key == key));
+                *app.present_results.write().unwrap() = completed.values().cloned().collect();
+                let mut pending = app.pending.write().unwrap();
+                *pending = latest
+                    .iter()
+                    .filter(|m| !completed.contains_key(&m.key))
+                    .count();
+                drop(pending);
+                *app.progress.write().unwrap() = Progress::default();
+            }
+            Ok(())
+        })();
+        match work {
+            Ok(()) => *app.error.write().unwrap() = None,
+            Err(error) => {
+                tracing::error!(error=%error,"Surveillance interrompue");
+                *app.error.write().unwrap() = Some(format!("{error:#}"));
+                *app.progress.write().unwrap() = Progress::default();
+                // Le stockage doit rester fiable avant de reprendre une analyse.
+                if let Ok(db) = db::open(&app.config.database) {
+                    let _ = db::recover(&db);
+                }
+            }
+        }
+        for _ in 0..5 {
+            if stop.load(Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+}
+
+async fn snapshot(State(app): State<App>) -> Result<Json<serde_json::Value>, StatusCode> {
+    tokio::task::spawn_blocking(move || {
+        let db=db::read(&app.config.database).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        let kpis=db::kpis(&db).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        let scans=db::scans(&db).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        Ok(Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"engine":app.engine.read().unwrap().clone(),"progress":app.progress.read().unwrap().clone(),"present_results":app.present_results.read().unwrap().clone(),"pending":*app.pending.read().unwrap(),"error":app.error.read().unwrap().clone(),"kpis":kpis,"scans":scans})))
+    }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+}
+
+async fn findings(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<model::Finding>>, StatusCode> {
+    if uuid::Uuid::parse_str(&id).is_err() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    tokio::task::spawn_blocking(move || {
+        let db = db::read(&app.config.database).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        db::findings(&db, &id)
+            .map(Json)
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+}
+
+async fn export_history(State(app): State<App>) -> Result<Response, StatusCode> {
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<String, std::io::Error>>(2);
+    let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
+    tokio::task::spawn_blocking(move || {
+        let db = match db::read(&app.config.database) {
+            Ok(db) => db,
+            Err(_) => {
+                let _ = ready_sender.send(false);
+                return;
+            }
+        };
+        let _ = ready_sender.send(true);
+        if let Err(error) = export::write(&db, |row| {
+            sender
+                .blocking_send(Ok(row))
+                .map_err(|_| anyhow::anyhow!("Téléchargement fermé"))
+        }) {
+            let _ = sender.blocking_send(Err(std::io::Error::other(error.to_string())));
+        }
+    });
+    if ready_receiver.await != Ok(true) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"station-blanche-historique.csv\"",
+            ),
+        ],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response())
+}
+
+async fn live(State(app): State<App>) -> Json<serde_json::Value> {
+    Json(
+        serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"engine":app.engine.read().unwrap().clone(),"progress":app.progress.read().unwrap().clone(),"present_results":app.present_results.read().unwrap().clone(),"pending":*app.pending.read().unwrap(),"error":app.error.read().unwrap().clone()}),
+    )
+}
+
+async fn index(Query(query): Query<HashMap<String, String>>) -> Response {
+    if query.contains_key("kiosk") {
+        Redirect::temporary("/kiosk").into_response()
+    } else {
+        Html(include_str!("../web/index.html")).into_response()
+    }
+}
+
+async fn ready(State(app): State<App>) -> impl IntoResponse {
+    if app.engine.read().unwrap().ready && app.error.read().unwrap().is_none() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "station_blanche=info".into()),
+        )
+        .init();
+    let config = Config::from_env()?;
+    let auth_routes = Router::new()
+        .route("/auth/login", post(auth::login))
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/check", get(auth::check))
+        .with_state(auth::Auth::new()?);
+    if let Some(parent) = config.database.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::create_dir_all(&config.quarantine)?;
+    let db = db::open(&config.database)?;
+    db::recover(&db)?;
+    drop(db);
+    let app = App {
+        config: config.clone(),
+        engine: Arc::new(RwLock::new(EngineStatus {
+            ready: false,
+            version: String::new(),
+            last_update_check: None,
+            message: "Initialisation du moteur".into(),
+        })),
+        progress: Arc::new(RwLock::new(Progress::default())),
+        error: Arc::new(RwLock::new(None)),
+        present_results: Arc::new(RwLock::new(Vec::new())),
+        pending: Arc::new(RwLock::new(0)),
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    let worker_app = app.clone();
+    let worker_stop = stop.clone();
+    let listener = tokio::net::TcpListener::bind(&config.listen)
+        .await
+        .context("Écoute HTTP")?;
+    // La boucle de scan ne bloque jamais le serveur HTTP.
+    let worker = tokio::task::spawn_blocking(move || worker(worker_app, worker_stop));
+    let routes=Router::new()
+        .route("/",get(index))
+        .route("/login",get(||async {Html(include_str!("../web/login.html"))}))
+        .route("/login.css",get(||async {([(header::CONTENT_TYPE,"text/css; charset=utf-8")],include_str!("../web/login.css"))}))
+        .route("/login.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/login.js"))}))
+        .merge(auth_routes)
+        .route("/kiosk",get(||async {Html(include_str!("../web/kiosk.html"))}))
+        .route("/kiosk.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/kiosk.js"))}))
+        .route("/state.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/state.js"))}))
+        .route("/kiosk.css",get(||async {([(header::CONTENT_TYPE,"text/css; charset=utf-8")],include_str!("../web/kiosk.css"))}))
+        .route("/app.js",get(||async {([(header::CONTENT_TYPE,"text/javascript; charset=utf-8")],include_str!("../web/app.js"))}))
+        .route("/style.css",get(||async {([(header::CONTENT_TYPE,"text/css; charset=utf-8")],include_str!("../web/style.css"))}))
+        .route("/api/status",get(snapshot))
+        .route("/api/export/history.csv",get(export_history))
+        .route("/api/live",get(live))
+        .route("/api/scans/{id}/findings",get(findings))
+        .route("/health/live",get(||async {StatusCode::OK}))
+        .route("/health/ready",get(ready))
+        .layer(axum::middleware::map_response(|mut response:axum::response::Response|async move {
+            let headers=response.headers_mut();
+            headers.insert("content-security-policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap());
+            headers.insert("x-content-type-options","nosniff".parse().unwrap());
+            headers.insert("referrer-policy","same-origin".parse().unwrap());
+            headers.insert(header::CACHE_CONTROL,"no-store".parse().unwrap());
+            response
+        }))
+        .with_state(app);
+    tracing::info!(listen=%config.listen,"Station Blanche v2 démarrée");
+    let shutdown_stop = stop.clone();
+    let result = axum::serve(listener, routes)
+        .with_graceful_shutdown(async move {
+            #[cfg(unix)]
+            {
+                let mut term =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("SIGTERM");
+                tokio::select! { _=tokio::signal::ctrl_c()=>{}, _=term.recv()=>{} }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+            stop.store(true, Ordering::Relaxed);
+        })
+        .await;
+    shutdown_stop.store(true, Ordering::Relaxed);
+    worker.await?;
+    result?;
+    Ok(())
+}

@@ -1,0 +1,40 @@
+name: Validate v2
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: for script in installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh tests/*.sh; do bash -n "$script"; done
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck clamav-daemon netcat-openbsd jq
+      - run: shellcheck installation.sh deploy/*.sh deploy/host/*.sh deploy/clamav/*.sh tests/*.sh
+      - run: bash tests/installer-checks.sh
+      - run: bash tests/kiosk-launch-checks.sh
+      - run: python3 tests/desktop_checks.py
+      - run: python3 tests/rdp_checks.py
+      - run: bash tests/apt-checks.sh
+      - run: bash tests/network-checks.sh
+      - run: bash tests/usb-verifier-checks.sh
+      - run: bash tests/clamd-integration.sh
+      - run: node --check web/app.js
+      - run: node --check web/kiosk.js && node tests/ui-state.mjs
+      - run: node --check web/login.js && node tests/login-interface.mjs
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t station-blanche/app:test .
+      - run: docker build -f deploy/clamav/Dockerfile -t station-blanche/clamav:test .
+      - run: bash tests/container-smoke.sh
+      - run: bash tests/compose-web-checks.sh

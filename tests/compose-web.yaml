@@ -1,0 +1,25 @@
+# Surcharge de recette : même topologie et mêmes ports que la production, sans téléchargement des signatures.
+services:
+  app:
+    image: station-blanche/app:test
+    volumes:
+      - type: bind
+        source: ${SB_COMPOSE_TEST_HASH:?}
+        target: /run/secrets/admin.hash
+        read_only: true
+      - type: bind
+        source: ${SB_COMPOSE_TEST_MEDIA:?}
+        target: /media
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: false
+  clamav:
+    image: station-blanche/clamav:test
+    entrypoint: [sleep, "3600"]
+  web:
+    volumes:
+      - type: bind
+        source: ${SB_COMPOSE_TEST_AUTH:?}
+        target: /etc/caddy/admin.caddy
+        read_only: true
